@@ -32,6 +32,7 @@
 				:qz-connected="qzConnected"
 				:print-provider="terminalPrintProvider"
 				:local-agent-connected="localAgentConnected"
+				:mobile-agent-connected="mobileAgentConnected"
 				@sync-click="handleSyncClick"
 				@printer-click="openHistoryDialog"
 				@refresh-click="handleRefresh"
@@ -1162,6 +1163,7 @@ import {
 } from "@/utils/printInvoice";
 import { qzConnected, connect as qzConnect, disconnect as qzDisconnect } from "@/utils/qzTray";
 import { localAgentHealth } from "@/utils/localAgent";
+import { mobileAgentHealth } from "@/utils/mobileAgent";
 import {
 	getPrintProvider,
 	PRINT_PROVIDERS,
@@ -1383,28 +1385,45 @@ const profileWarehouses = computed(() => {
 const canAccessShiftActions = computed(() => shiftStore.hasOpenShift);
 const terminalPrintProvider = ref(getPrintProvider());
 const localAgentConnected = ref(false);
-let localAgentStatusTimer = null;
+const mobileAgentConnected = ref(false);
+let agentStatusTimer = null;
 
-async function refreshLocalAgentPrintStatus() {
-	if (
-		!posSettingsStore.silentPrint ||
-		terminalPrintProvider.value !== PRINT_PROVIDERS.LOCAL_AGENT
-	) {
+async function refreshAgentPrintStatus() {
+	if (!posSettingsStore.silentPrint) {
 		localAgentConnected.value = false;
+		mobileAgentConnected.value = false;
 		return;
 	}
 
-	try {
-		await localAgentHealth();
-		localAgentConnected.value = true;
-	} catch {
-		localAgentConnected.value = false;
+	if (terminalPrintProvider.value === PRINT_PROVIDERS.LOCAL_AGENT) {
+		mobileAgentConnected.value = false;
+		try {
+			await localAgentHealth();
+			localAgentConnected.value = true;
+		} catch {
+			localAgentConnected.value = false;
+		}
+		return;
 	}
+
+	if (terminalPrintProvider.value === PRINT_PROVIDERS.MOBILE_AGENT) {
+		localAgentConnected.value = false;
+		try {
+			await mobileAgentHealth();
+			mobileAgentConnected.value = true;
+		} catch {
+			mobileAgentConnected.value = false;
+		}
+		return;
+	}
+
+	localAgentConnected.value = false;
+	mobileAgentConnected.value = false;
 }
 
 function syncTerminalPrintProvider() {
 	terminalPrintProvider.value = getPrintProvider();
-	refreshLocalAgentPrintStatus();
+	refreshAgentPrintStatus();
 }
 
 /** Desk link only for users with the Nexus POS Manager role (from bootstrap API). */
@@ -1422,7 +1441,7 @@ onMounted(async () => {
 	};
 	window.addEventListener("resize", handleResize, { passive: true });
 	window.addEventListener(PRINT_PROVIDER_CHANGED_EVENT, syncTerminalPrintProvider);
-	localAgentStatusTimer = window.setInterval(refreshLocalAgentPrintStatus, 5000);
+	agentStatusTimer = window.setInterval(refreshAgentPrintStatus, 5000);
 
 	// Set up real-time stock update listener
 	const cleanup = onStockUpdate(async (stockUpdates) => {
@@ -1569,10 +1588,11 @@ onMounted(async () => {
 				await qzDisconnect();
 			}
 
-			if (enabled && provider === PRINT_PROVIDERS.LOCAL_AGENT) {
-				await refreshLocalAgentPrintStatus();
+			if (enabled && [PRINT_PROVIDERS.LOCAL_AGENT, PRINT_PROVIDERS.MOBILE_AGENT].includes(provider)) {
+				await refreshAgentPrintStatus();
 			} else {
 				localAgentConnected.value = false;
+				mobileAgentConnected.value = false;
 			}
 		},
 		{ immediate: true }
@@ -1584,9 +1604,9 @@ onMounted(async () => {
 		stopActivityTracking();
 		qzDisconnect();
 		window.removeEventListener(PRINT_PROVIDER_CHANGED_EVENT, syncTerminalPrintProvider);
-		if (localAgentStatusTimer) {
-			window.clearInterval(localAgentStatusTimer);
-			localAgentStatusTimer = null;
+		if (agentStatusTimer) {
+			window.clearInterval(agentStatusTimer);
+			agentStatusTimer = null;
 		}
 	});
 

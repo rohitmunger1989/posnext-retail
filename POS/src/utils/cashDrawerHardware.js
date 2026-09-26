@@ -1,4 +1,5 @@
 import { openLocalAgentCashDrawer } from "@/utils/localAgent";
+import { openMobileAgentCashDrawer } from "@/utils/mobileAgent";
 import { getSavedPrinterName, openCashDrawer as openQzCashDrawer } from "@/utils/qzTray";
 
 export function cashDrawerStorageKey(posProfile) {
@@ -19,7 +20,7 @@ export function loadCashDrawerTerminalSettings(posProfile) {
 		}
 		const saved = JSON.parse(raw);
 		return {
-			mode: ["disabled", "qz", "local_agent"].includes(saved?.mode) ? saved.mode : "disabled",
+			mode: ["disabled", "qz", "local_agent", "mobile_agent"].includes(saved?.mode) ? saved.mode : "disabled",
 			terminal_id: String(saved?.terminal_id || "").trim(),
 			printer_name: String(saved?.printer_name || "").trim(),
 			command_profile: ["escpos_drawer_1", "escpos_drawer_2", "star"].includes(saved?.command_profile)
@@ -39,6 +40,7 @@ export function loadCashDrawerTerminalSettings(posProfile) {
 export function getCashDrawerMethodLabel(mode) {
 	if (mode === "qz") return "QZ Tray";
 	if (mode === "local_agent") return "POSNext Local Agent";
+	if (mode === "mobile_agent") return "POSNext Mobile Agent";
 	return "";
 }
 
@@ -62,6 +64,10 @@ export async function openCashDrawerHardware({ mode, printerName, commandProfile
 
 	if (mode === "local_agent") {
 		return openLocalAgentCashDrawer(printerName, commandProfile, terminalId);
+	}
+
+	if (mode === "mobile_agent") {
+		return openMobileAgentCashDrawer(printerName, commandProfile, terminalId);
 	}
 
 	throw new Error("Cash drawer mode is disabled.");

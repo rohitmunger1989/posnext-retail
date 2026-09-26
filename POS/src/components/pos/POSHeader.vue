@@ -527,6 +527,10 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	mobileAgentConnected: {
+		type: Boolean,
+		default: false,
+	},
 });
 
 const printStatusTitle = computed(() => {
@@ -538,7 +542,11 @@ const printStatusTitle = computed(() => {
 			: __("POSNext Local Agent: Disconnected");
 	}
 	if (props.printProvider === "browser") return __("Browser Print");
-	if (props.printProvider === "mobile_agent") return __("POSNext Mobile Agent: Coming Soon");
+	if (props.printProvider === "mobile_agent") {
+		return props.mobileAgentConnected
+			? __("POSNext Mobile Agent: Connected")
+			: __("POSNext Mobile Agent: Disconnected");
+	}
 	return props.qzConnected ? __("QZ Tray: Connected") : __("QZ Tray: Disconnected");
 });
 
@@ -547,7 +555,7 @@ const printStatusDotClass = computed(() => {
 		return props.localAgentConnected ? "bg-blue-500" : "bg-red-500";
 	}
 	if (props.printProvider === "browser") return "bg-gray-400";
-	if (props.printProvider === "mobile_agent") return "bg-purple-500";
+	if (props.printProvider === "mobile_agent") return props.mobileAgentConnected ? "bg-purple-500" : "bg-red-500";
 	return props.qzConnected ? "bg-green-500" : "bg-red-500";
 });
 

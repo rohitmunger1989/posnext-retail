@@ -1,6 +1,7 @@
 import { logger } from "@/utils/logger";
 import { getSavedPrinterName, printHTML as qzPrintHTML } from "@/utils/qzTray";
 import { printLocalAgentHTML } from "@/utils/localAgent";
+import { printMobileAgentHTML, printMobileAgentPDF } from "@/utils/mobileAgent";
 
 const log = logger.create("PrintProvider");
 
@@ -8,6 +9,9 @@ const PROVIDER_KEY = "posnext_print_provider";
 const PAPER_WIDTH_KEY = "posnext_print_paper_width";
 const RECEIPT_PRINTER_KEY = "posnext_receipt_printer_name";
 const TERMINAL_ID_KEY = "posnext_terminal_id";
+const PAPER_CUT_TIMING_KEY = "posnext_print_cut_timing";
+const PAPER_CUT_MODE_KEY = "posnext_print_cut_mode";
+const MOBILE_AGENT_RENDER_MODE_KEY = "posnext_mobile_agent_render_mode";
 
 export const PRINT_PROVIDER_CHANGED_EVENT = "posnext:print-provider-changed";
 
@@ -16,6 +20,22 @@ export const PRINT_PROVIDERS = Object.freeze({
 	QZ: "qz",
 	LOCAL_AGENT: "local_agent",
 	MOBILE_AGENT: "mobile_agent",
+});
+
+export const PRINT_CUT_TIMINGS = Object.freeze({
+	NONE: "none",
+	AFTER_DOCUMENT: "after_document",
+	AFTER_PAGE: "after_page",
+});
+
+export const PRINT_CUT_MODES = Object.freeze({
+	PARTIAL: "partial",
+	FULL: "full",
+});
+
+export const MOBILE_AGENT_RENDER_MODES = Object.freeze({
+	PDF: "pdf",
+	HTML: "html",
 });
 
 function notifyPrintProviderChanged() {
@@ -126,6 +146,75 @@ export function savePrintTerminalId(terminalId) {
 	return value;
 }
 
+export function getPrintCutTiming() {
+	try {
+		const value = String(localStorage.getItem(PAPER_CUT_TIMING_KEY) || PRINT_CUT_TIMINGS.AFTER_DOCUMENT)
+			.trim()
+			.toLowerCase();
+		return Object.values(PRINT_CUT_TIMINGS).includes(value)
+			? value
+			: PRINT_CUT_TIMINGS.AFTER_DOCUMENT;
+	} catch {
+		return PRINT_CUT_TIMINGS.AFTER_DOCUMENT;
+	}
+}
+
+export function savePrintCutTiming(timing) {
+	const value = String(timing || "").trim().toLowerCase();
+	if (!Object.values(PRINT_CUT_TIMINGS).includes(value)) {
+		throw new Error(`Invalid paper cut timing: ${value}`);
+	}
+	localStorage.setItem(PAPER_CUT_TIMING_KEY, value);
+	notifyPrintProviderChanged();
+	return value;
+}
+
+export function getPrintCutMode() {
+	try {
+		return String(localStorage.getItem(PAPER_CUT_MODE_KEY) || PRINT_CUT_MODES.PARTIAL)
+			.trim()
+			.toLowerCase() === PRINT_CUT_MODES.FULL
+			? PRINT_CUT_MODES.FULL
+			: PRINT_CUT_MODES.PARTIAL;
+	} catch {
+		return PRINT_CUT_MODES.PARTIAL;
+	}
+}
+
+export function savePrintCutMode(mode) {
+	const value = String(mode || "").trim().toLowerCase() === PRINT_CUT_MODES.FULL
+		? PRINT_CUT_MODES.FULL
+		: PRINT_CUT_MODES.PARTIAL;
+	localStorage.setItem(PAPER_CUT_MODE_KEY, value);
+	notifyPrintProviderChanged();
+	return value;
+}
+
+export function getMobileAgentRenderMode() {
+	try {
+		const value = String(
+			localStorage.getItem(MOBILE_AGENT_RENDER_MODE_KEY) || MOBILE_AGENT_RENDER_MODES.PDF
+		)
+			.trim()
+			.toLowerCase();
+		return Object.values(MOBILE_AGENT_RENDER_MODES).includes(value)
+			? value
+			: MOBILE_AGENT_RENDER_MODES.PDF;
+	} catch {
+		return MOBILE_AGENT_RENDER_MODES.PDF;
+	}
+}
+
+export function saveMobileAgentRenderMode(mode) {
+	const value = String(mode || "").trim().toLowerCase();
+	if (!Object.values(MOBILE_AGENT_RENDER_MODES).includes(value)) {
+		throw new Error(`Invalid Mobile Agent receipt mode: ${value}`);
+	}
+	localStorage.setItem(MOBILE_AGENT_RENDER_MODE_KEY, value);
+	notifyPrintProviderChanged();
+	return value;
+}
+
 export function isBrowserPrintProvider() {
 	return getPrintProvider() === PRINT_PROVIDERS.BROWSER;
 }
@@ -168,6 +257,8 @@ export async function silentPrintHTML(
 	).trim();
 	const configuredTerminalId = String(terminalId || getPrintTerminalId() || "").trim();
 	const paperWidthMm = getPrintPaperWidth();
+	const cutTiming = getPrintCutTiming();
+	const cutMode = getPrintCutMode();
 
 	log.info(`Printing with provider: ${provider}`);
 
@@ -188,7 +279,15 @@ export async function silentPrintHTML(
 			return { success: true, provider };
 
 		case PRINT_PROVIDERS.MOBILE_AGENT:
-			throw new Error("POSNext Mobile Agent support is not available yet.");
+			await printMobileAgentHTML(content, {
+				printerName: configuredPrinter,
+				terminalId: configuredTerminalId,
+				paperWidthMm,
+				jobName: String(jobName || "POSNext Receipt").trim(),
+				cutTiming,
+				cutMode,
+			});
+			return { success: true, provider };
 
 		case PRINT_PROVIDERS.BROWSER:
 			return {
@@ -200,4 +299,45 @@ export async function silentPrintHTML(
 		default:
 			throw new Error(`Unsupported print provider: ${provider}`);
 	}
+}
+
+
+/**
+ * Send a finished PDF through POSNext Mobile Agent.
+ * PDF is intentionally Mobile-Agent-only; QZ/Local Agent continue to use HTML.
+ */
+export async function silentPrintPDF(
+	pdfData,
+	{
+		printerName = "",
+		terminalId = "",
+		jobName = "POSNext Receipt",
+	} = {}
+) {
+	const provider = getPrintProvider();
+	if (provider !== PRINT_PROVIDERS.MOBILE_AGENT) {
+		throw new Error("PDF receipt rendering is only available with POSNext Mobile Agent.");
+	}
+
+	const configuredPrinter = String(
+		printerName || getReceiptPrinterName() || ""
+	).trim();
+	const configuredTerminalId = String(
+		terminalId || getPrintTerminalId() || ""
+	).trim();
+
+	await printMobileAgentPDF(pdfData, {
+		printerName: configuredPrinter,
+		terminalId: configuredTerminalId,
+		paperWidthMm: getPrintPaperWidth(),
+		jobName: String(jobName || "POSNext Receipt").trim(),
+		cutTiming: getPrintCutTiming(),
+		cutMode: getPrintCutMode(),
+	});
+
+	return {
+		success: true,
+		provider,
+		renderMode: MOBILE_AGENT_RENDER_MODES.PDF,
+	};
 }

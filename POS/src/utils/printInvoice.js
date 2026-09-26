@@ -5,7 +5,10 @@ import { getOfflineInvoiceByOfflineId } from "@/utils/offline/sync";
 import { offlineWorker } from "@/utils/offline/workerClient";
 import {
 	silentPrintHTML,
+	silentPrintPDF,
+	getMobileAgentRenderMode,
 	getPrintProvider,
+	MOBILE_AGENT_RENDER_MODES,
 	PRINT_PROVIDERS,
 } from "@/utils/printProvider";
 
@@ -547,10 +550,56 @@ export async function printInvoiceByName(
 }
 
 // ============================================================================
-// Silent printing (QZ Tray — no browser dialog)
+// Silent printing (QZ Tray / Local Agent / Mobile Agent — no browser dialog)
 // ============================================================================
 
+async function fetchPrintPDF(doctype, name, printFormat) {
+	const params = new URLSearchParams({
+		doctype,
+		name,
+		format: printFormat,
+		no_letterhead: "1",
+	});
+
+	const response = await fetch(
+		`/api/method/frappe.utils.print_format.download_pdf?${params.toString()}`,
+		{
+			method: "GET",
+			credentials: "include",
+			cache: "no-store",
+		}
+	);
+
+	if (!response.ok) {
+		const message = await response.text().catch(() => "");
+		throw new Error(
+			`ERPNext PDF generation failed (${response.status})${message ? `: ${message}` : ""}`
+		);
+	}
+
+	const pdf = await response.blob();
+	if (!pdf?.size) {
+		throw new Error("ERPNext returned an empty PDF.");
+	}
+
+	return pdf;
+}
+
 export async function silentPrintDoc(doctype, name, printFormat, isDuplicate = false) {
+	const provider = getPrintProvider();
+	const mobileRenderMode = getMobileAgentRenderMode();
+
+	if (
+		provider === PRINT_PROVIDERS.MOBILE_AGENT &&
+		mobileRenderMode === MOBILE_AGENT_RENDER_MODES.PDF
+	) {
+		const pdf = await fetchPrintPDF(doctype, name, printFormat);
+		await silentPrintPDF(pdf, {
+			jobName: `${doctype} ${name}`,
+		});
+		return true;
+	}
+
 	const result = await call("frappe.www.printview.get_html_and_style", {
 		doc: doctype,
 		name,
@@ -623,9 +672,9 @@ export async function silentPrintInvoiceFromDoc(invoiceData) {
 }
 
 /**
- * Try silent print, fall back to browser print on failure.
+ * Try silent print. Mobile Agent errors stay on the Mobile Agent path; other silent providers may fall back to browser print.
  * silentPrintInvoice routes through the terminal-specific print provider.
- * QZ Tray and POSNext Local Agent are supported silent providers.
+ * QZ Tray, POSNext Local Agent, and POSNext Mobile Agent are supported silent providers.
  */
 export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	const isDuplicate = Boolean(invoiceData?._posnext_duplicate);
@@ -635,6 +684,25 @@ export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	if (!invoiceName) throw new Error("Invalid invoice data — missing name");
 
 	const provider = getPrintProvider();
+	let effectivePrintFormat = printFormat;
+
+	if (!effectivePrintFormat) {
+		let posProfile = invoiceData?.pos_profile;
+
+		if (!posProfile && !isLocalOnlyInvoiceName(invoiceName)) {
+			try {
+				const serverInvoice = await call("pos_next.api.invoices.get_invoice", {
+					invoice_name: invoiceName,
+				});
+				posProfile = serverInvoice?.pos_profile || "";
+			} catch (err) {
+				log.warn("Could not resolve invoice POS Profile for printing:", err);
+			}
+		}
+
+		const settings = await resolvePrintSettings(posProfile, null, null);
+		effectivePrintFormat = settings.printFormat;
+	}
 
 	if (provider === PRINT_PROVIDERS.BROWSER) {
 		try {
@@ -643,7 +711,7 @@ export async function printWithSilentFallback(invoiceData, printFormat = null) {
 			} else {
 				await printInvoiceByName(
 					invoiceName,
-					printFormat,
+					effectivePrintFormat,
 					null,
 					{ duplicate: isDuplicate }
 				);
@@ -670,6 +738,10 @@ export async function printWithSilentFallback(invoiceData, printFormat = null) {
 			await silentPrintInvoiceFromDoc(invoiceData);
 			return { method: "silent", success: true };
 		} catch (err) {
+			if (provider === PRINT_PROVIDERS.MOBILE_AGENT) {
+				log.error("POSNext Mobile Agent local receipt print failed:", err?.message || err);
+				throw err;
+			}
 			log.warn("Silent local receipt failed, falling back to browser:", err?.message || err);
 		}
 		try {
@@ -682,14 +754,18 @@ export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	}
 
 	try {
-		await silentPrintInvoice(invoiceName, printFormat, isDuplicate);
+		await silentPrintInvoice(invoiceName, effectivePrintFormat, isDuplicate);
 		return { method: "silent", success: true };
 	} catch (err) {
+		if (provider === PRINT_PROVIDERS.MOBILE_AGENT) {
+			log.error("POSNext Mobile Agent print failed:", err?.message || err);
+			throw err;
+		}
 		log.warn("Silent print failed, falling back to browser:", err?.message || err);
 	}
 
 	try {
-		await printInvoiceByName(invoiceName, printFormat, null, { duplicate: isDuplicate });
+		await printInvoiceByName(invoiceName, effectivePrintFormat, null, { duplicate: isDuplicate });
 		return { method: "browser", success: true };
 	} catch (err) {
 		log.error("Browser print fallback also failed:", err);
