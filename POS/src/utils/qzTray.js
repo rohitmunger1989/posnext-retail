@@ -306,7 +306,7 @@ export async function openCashDrawer(printerName, commandProfile = "escpos_drawe
 
 	const printer = String(printerName || getSavedPrinterName() || "").trim();
 	if (!printer) {
-		throw new Error("No cash drawer printer configured. Select a QZ printer in Cash Drawer Setup or POS Settings.");
+		throw new Error("No cash drawer printer configured. Select a QZ printer in Printer & Cash Drawer Setup.");
 	}
 
 	if (commandProfile === "star") {

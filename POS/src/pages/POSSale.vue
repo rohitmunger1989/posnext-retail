@@ -30,6 +30,8 @@
 				:is-refreshing="stockStore.refreshing"
 				:silent-print-enabled="posSettingsStore.silentPrint"
 				:qz-connected="qzConnected"
+				:print-provider="terminalPrintProvider"
+				:local-agent-connected="localAgentConnected"
 				@sync-click="handleSyncClick"
 				@printer-click="openHistoryDialog"
 				@refresh-click="handleRefresh"
@@ -227,18 +229,14 @@
                                                 <span>{{ __("Open Drawer") }}</span>
                                         </button>
                                         <button
-                                                v-if="
-                                                        shiftStore.hasOpenShift &&
-                                                        cartStore.itemCount === 0 &&
-                                                        Number(posSettingsStore.settings?.enable_cash_drawer) === 1
-                                                "
+                                                v-if="shiftStore.hasOpenShift && cartStore.itemCount === 0"
                                                 @click="$refs.invoiceCart?.openCashDrawerSetupDialog()"
                                                 class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"
                                         >
                                                 <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06" />
                                                 </svg>
-                                                <span>{{ __("Cash Drawer Setup") }}</span>
+                                                <span>{{ __("Printer & Cash Drawer Setup") }}</span>
                                         </button>
 				</template>
 				<template #additional-actions>
@@ -1163,6 +1161,12 @@ import {
 	printWithSilentFallback,
 } from "@/utils/printInvoice";
 import { qzConnected, connect as qzConnect, disconnect as qzDisconnect } from "@/utils/qzTray";
+import { localAgentHealth } from "@/utils/localAgent";
+import {
+	getPrintProvider,
+	PRINT_PROVIDERS,
+	PRINT_PROVIDER_CHANGED_EVENT,
+} from "@/utils/printProvider";
 import { tryAutomaticCashDrawerOpen } from "@/utils/cashDrawerAuto";
 
 import { Button, Dialog, createResource } from "frappe-ui";
@@ -1377,6 +1381,31 @@ const profileWarehouses = computed(() => {
 });
 
 const canAccessShiftActions = computed(() => shiftStore.hasOpenShift);
+const terminalPrintProvider = ref(getPrintProvider());
+const localAgentConnected = ref(false);
+let localAgentStatusTimer = null;
+
+async function refreshLocalAgentPrintStatus() {
+	if (
+		!posSettingsStore.silentPrint ||
+		terminalPrintProvider.value !== PRINT_PROVIDERS.LOCAL_AGENT
+	) {
+		localAgentConnected.value = false;
+		return;
+	}
+
+	try {
+		await localAgentHealth();
+		localAgentConnected.value = true;
+	} catch {
+		localAgentConnected.value = false;
+	}
+}
+
+function syncTerminalPrintProvider() {
+	terminalPrintProvider.value = getPrintProvider();
+	refreshLocalAgentPrintStatus();
+}
 
 /** Desk link only for users with the Nexus POS Manager role (from bootstrap API). */
 const canSwitchToDesk = computed(() => Boolean(bootstrapStore.data?.can_switch_to_desk));
@@ -1392,6 +1421,8 @@ onMounted(async () => {
 		updateLayoutBounds();
 	};
 	window.addEventListener("resize", handleResize, { passive: true });
+	window.addEventListener(PRINT_PROVIDER_CHANGED_EVENT, syncTerminalPrintProvider);
+	localAgentStatusTimer = window.setInterval(refreshLocalAgentPrintStatus, 5000);
 
 	// Set up real-time stock update listener
 	const cleanup = onStockUpdate(async (stockUpdates) => {
@@ -1528,14 +1559,20 @@ onMounted(async () => {
 		});
 	});
 
-	// QZ Tray lifecycle — lazy connect when silent print is enabled
+	// Connect only the silent-print transport selected for this terminal.
 	watch(
-		() => posSettingsStore.silentPrint,
-		async (enabled) => {
-			if (enabled) {
+		[() => posSettingsStore.silentPrint, terminalPrintProvider],
+		async ([enabled, provider]) => {
+			if (enabled && provider === PRINT_PROVIDERS.QZ) {
 				await qzConnect();
 			} else {
 				await qzDisconnect();
+			}
+
+			if (enabled && provider === PRINT_PROVIDERS.LOCAL_AGENT) {
+				await refreshLocalAgentPrintStatus();
+			} else {
+				localAgentConnected.value = false;
 			}
 		},
 		{ immediate: true }
@@ -1546,6 +1583,11 @@ onMounted(async () => {
 		cleanup();
 		stopActivityTracking();
 		qzDisconnect();
+		window.removeEventListener(PRINT_PROVIDER_CHANGED_EVENT, syncTerminalPrintProvider);
+		if (localAgentStatusTimer) {
+			window.clearInterval(localAgentStatusTimer);
+			localAgentStatusTimer = null;
+		}
 	});
 
 	try {

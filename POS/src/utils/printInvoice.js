@@ -3,7 +3,11 @@ import { logger } from "@/utils/logger";
 import { getOfflineReceiptPayload } from "@/utils/offline/offlineReceiptCache";
 import { getOfflineInvoiceByOfflineId } from "@/utils/offline/sync";
 import { offlineWorker } from "@/utils/offline/workerClient";
-import { printHTML as qzPrintHTML } from "@/utils/qzTray";
+import {
+	silentPrintHTML,
+	getPrintProvider,
+	PRINT_PROVIDERS,
+} from "@/utils/printProvider";
 
 const log = logger.create("PrintInvoice");
 
@@ -564,7 +568,14 @@ export async function silentPrintDoc(doctype, name, printFormat, isDuplicate = f
 <body>${addDuplicateBanner(html, isDuplicate)}</body>
 </html>`;
 
-	await qzPrintHTML(fullHTML);
+	const printResult = await silentPrintHTML(fullHTML, {
+		jobName: `${doctype} ${name}`,
+	});
+
+	if (printResult?.browserRequired) {
+		throw new Error("Browser print provider selected.");
+	}
+
 	return true;
 }
 
@@ -598,7 +609,14 @@ export async function silentPrintInvoice(invoiceName, printFormat = null, isDupl
  */
 export async function silentPrintInvoiceFromDoc(invoiceData) {
 	const fullHTML = buildReceiptDocumentHTML(invoiceData, { includeControls: false });
-	await qzPrintHTML(fullHTML);
+	const printResult = await silentPrintHTML(fullHTML, {
+		jobName: `Sales Invoice ${invoiceData?.name || ""}`.trim(),
+	});
+
+	if (printResult?.browserRequired) {
+		throw new Error("Browser print provider selected.");
+	}
+
 	log.info(`Silent print (local receipt) for ${invoiceData?.name}`);
 	flagOfflineInvoicePrinted(invoiceData?.name);
 	return true;
@@ -606,8 +624,8 @@ export async function silentPrintInvoiceFromDoc(invoiceData) {
 
 /**
  * Try silent print, fall back to browser print on failure.
- * silentPrintInvoice → qzPrintHTML → connect() handles auto-reconnect
- * internally, so no separate connection logic is needed here.
+ * silentPrintInvoice routes through the terminal-specific print provider.
+ * QZ Tray and POSNext Local Agent are supported silent providers.
  */
 export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	const isDuplicate = Boolean(invoiceData?._posnext_duplicate);
@@ -615,6 +633,37 @@ export async function printWithSilentFallback(invoiceData, printFormat = null) {
 	if (isDuplicate) invoiceData = { ...invoiceData, _posnext_duplicate: true };
 	const invoiceName = invoiceData?.name;
 	if (!invoiceName) throw new Error("Invalid invoice data — missing name");
+
+	const provider = getPrintProvider();
+
+	if (provider === PRINT_PROVIDERS.BROWSER) {
+		try {
+			if (isLocalOnlyInvoiceName(invoiceName) && invoiceData.items?.length > 0) {
+				printInvoiceCustom(invoiceData);
+			} else {
+				await printInvoiceByName(
+					invoiceName,
+					printFormat,
+					null,
+					{ duplicate: isDuplicate }
+				);
+			}
+
+			return {
+				method: "browser",
+				provider,
+				success: true,
+			};
+		} catch (err) {
+			log.error("Browser print failed:", err);
+
+			return {
+				method: "browser",
+				provider,
+				success: false,
+			};
+		}
+	}
 
 	if (isLocalOnlyInvoiceName(invoiceName) && invoiceData.items?.length > 0) {
 		try {
