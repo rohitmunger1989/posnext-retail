@@ -345,19 +345,13 @@
 					<div v-if="hasOpenShift" class="hidden md:block relative">
 						<ActionButton
 							:icon="printerIcon"
-							:title="
-								silentPrintEnabled
-									? qzConnected
-										? __('Silent Print: Connected')
-										: __('Silent Print: Disconnected')
-									: __('Print Invoice')
-							"
+							:title="printStatusTitle"
 							@click="$emit('printer-click')"
 						/>
 						<span
 							v-if="silentPrintEnabled"
 							class="absolute top-0.5 end-0.5 w-2 h-2 rounded-full border border-white"
-							:class="qzConnected ? 'bg-green-500' : 'bg-red-500'"
+							:class="printStatusDotClass"
 						></span>
 					</div>
 
@@ -525,6 +519,36 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	printProvider: {
+		type: String,
+		default: "qz",
+	},
+	localAgentConnected: {
+		type: Boolean,
+		default: false,
+	},
+});
+
+const printStatusTitle = computed(() => {
+	if (!props.silentPrintEnabled) return __("Print Invoice");
+
+	if (props.printProvider === "local_agent") {
+		return props.localAgentConnected
+			? __("POSNext Local Agent: Connected")
+			: __("POSNext Local Agent: Disconnected");
+	}
+	if (props.printProvider === "browser") return __("Browser Print");
+	if (props.printProvider === "mobile_agent") return __("POSNext Mobile Agent: Coming Soon");
+	return props.qzConnected ? __("QZ Tray: Connected") : __("QZ Tray: Disconnected");
+});
+
+const printStatusDotClass = computed(() => {
+	if (props.printProvider === "local_agent") {
+		return props.localAgentConnected ? "bg-blue-500" : "bg-red-500";
+	}
+	if (props.printProvider === "browser") return "bg-gray-400";
+	if (props.printProvider === "mobile_agent") return "bg-purple-500";
+	return props.qzConnected ? "bg-green-500" : "bg-red-500";
 });
 
 const paymentHubTotalCount = computed(

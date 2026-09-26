@@ -991,7 +991,7 @@
 								v-if="cashDrawerMode === 'disabled' || !cashDrawerTerminalId"
 								class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
 							>
-								{{ __("This terminal is not configured for a cash drawer. Ask an authorized manager to use Cash Drawer Setup.") }}
+								{{ __("This terminal is not configured for a cash drawer. Ask an authorized manager to use Printer & Cash Drawer Setup.") }}
 							</div>
 
 							<div>
@@ -1058,7 +1058,7 @@
 					</template>
 				</Dialog>
 
-                                <Dialog v-model="showCashDrawerSetupDialog" :options="{ title: __('Cash Drawer Setup'), size: 'md' }">
+                                <Dialog v-model="showCashDrawerSetupDialog" :options="{ title: __('Printer & Cash Drawer Setup'), size: 'md' }">
                                         <template #body-content>
                                                 <div class="space-y-4">
                                                         <div v-if="!cashDrawerSetupUnlocked" class="space-y-3">
@@ -1077,48 +1077,84 @@
 
                                                         <div v-else class="space-y-4">
                                                                 <div class="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">{{ __("Authorized by {0}", [cashDrawerSetupApprover || __("Manager")]) }}</div>
+
                                                                 <div>
-                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Cash Drawer Mode") }}</label>
-                                                                        <select v-model="cashDrawerMode" @change="handleCashDrawerModeChanged" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
-                                                                                <option value="disabled">{{ __("Disabled") }}</option>
-                                                                                <option value="qz">{{ __("QZ Tray") }}</option>
-                                                                                <option value="local_agent">{{ __("POSNext Local Agent") }}</option>
+                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Print Method") }}</label>
+                                                                        <select v-model="terminalPrintProvider" @change="handlePrintProviderChanged" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+                                                                                <option :value="PRINT_PROVIDERS.BROWSER">{{ __("Browser Print") }}</option>
+                                                                                <option :value="PRINT_PROVIDERS.QZ">{{ __("QZ Tray") }}</option>
+                                                                                <option :value="PRINT_PROVIDERS.LOCAL_AGENT">{{ __("POSNext Local Agent") }}</option>
+                                                                                <option :value="PRINT_PROVIDERS.MOBILE_AGENT" disabled>{{ __("POSNext Mobile Agent (Coming Soon)") }}</option>
                                                                         </select>
+                                                                        <p class="mt-1 text-[11px] text-gray-500">{{ __("Saved only on this POS terminal/device. Other terminals using the same POS Profile can use a different print method.") }}</p>
                                                                 </div>
+
                                                                 <div>
                                                                         <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Terminal ID") }}</label>
                                                                         <input v-model.trim="cashDrawerTerminalId" type="text" maxlength="140" :placeholder="__('Example: JAHRA-POS-01')" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
                                                                 </div>
-                                                                <div>
+
+                                                                <div v-if="setupHardwareMode !== 'disabled'">
                                                                         <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Receipt Printer") }}</label>
                                                                         <div class="flex items-center gap-2">
                                                                                 <select v-model="cashDrawerPrinterName" class="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
                                                                                         <option value="">{{ __("Select printer") }}</option>
                                                                                         <option v-for="printer in cashDrawerPrinterOptions" :key="printer" :value="printer">{{ printer }}</option>
                                                                                 </select>
-                                                                                <button type="button" :disabled="cashDrawerPrinterLoading || cashDrawerMode === 'disabled'" @click="refreshCashDrawerPrinters" class="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50">
+                                                                                <button type="button" :disabled="cashDrawerPrinterLoading" @click="refreshCashDrawerPrinters" class="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50">
                                                                                         {{ cashDrawerPrinterLoading ? __("Refreshing...") : __("Refresh") }}
                                                                                 </button>
                                                                         </div>
-                                                                        <p v-if="cashDrawerHardwareStatus" class="mt-1 text-[11px]" :class="cashDrawerHardwareStatusError ? 'text-red-600' : 'text-gray-500'">{{ cashDrawerHardwareStatus }}</p>
+                                                                        <p v-if="cashDrawerHardwareStatus" class="mt-1 flex items-center gap-1.5 text-[11px]" :class="cashDrawerHardwareStatusError ? 'text-red-600' : setupHardwareMode === 'local_agent' ? 'text-blue-600' : 'text-green-600'">
+                                                                                <span class="inline-block h-2 w-2 rounded-full" :class="cashDrawerHardwareStatusError ? 'bg-red-500' : setupHardwareMode === 'local_agent' ? 'bg-blue-500' : 'bg-green-500'"></span>
+                                                                                <span>{{ cashDrawerHardwareStatus }}</span>
+                                                                        </p>
                                                                 </div>
-                                                                <div v-if="cashDrawerMode === 'local_agent'">
-                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Local Agent Token") }}</label>
-                                                                        <input v-model.trim="cashDrawerLocalAgentToken" type="password" autocomplete="off" :placeholder="__('Token created by the POSNext Local Agent installer')" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
-                                                                        <p class="mt-1 text-[11px] text-gray-500">{{ __("Stored only on this POS terminal. The agent listens on localhost and restricts requests to the configured ERPNext origin and printer.") }}</p>
-                                                                </div>
-                                                                <div class="grid grid-cols-2 gap-2">
-                                                                        <button type="button" :disabled="cashDrawerHardwareTesting || cashDrawerMode === 'disabled' || !cashDrawerPrinterName" @click="testCashDrawerPrinter" class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50">{{ cashDrawerHardwareTesting ? __("Testing...") : __("Test Print") }}</button>
-                                                                        <button type="button" :disabled="cashDrawerHardwareTesting || cashDrawerMode === 'disabled' || !cashDrawerPrinterName" @click="testCashDrawerFromSetup" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">{{ __("Test Cash Drawer") }}</button>
-                                                                </div>
-                                                                <div>
-                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Drawer Command Profile") }}</label>
-                                                                        <select v-model="cashDrawerCommandProfile" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
-                                                                                <option value="escpos_drawer_1">{{ __("Generic ESC/POS Drawer 1") }}</option>
-                                                                                <option value="escpos_drawer_2">{{ __("Generic ESC/POS Drawer 2") }}</option>
-                                                                                <option value="star">{{ __("Star Compatible") }}</option>
+
+                                                                <div v-if="printProviderSupportsHardware">
+                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Paper Size") }}</label>
+                                                                        <select v-model.number="printPaperWidth" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+                                                                                <option :value="80">{{ __("80 mm") }}</option>
+                                                                                <option :value="58">{{ __("58 mm") }}</option>
                                                                         </select>
                                                                 </div>
+
+                                                                <div v-if="setupUsesLocalAgent">
+                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Local Agent Token") }}</label>
+                                                                        <input v-model.trim="cashDrawerLocalAgentToken" type="password" autocomplete="off" :placeholder="__('Token created by the POSNext Local Agent installer')" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
+                                                                        <p class="mt-1 text-[11px] text-gray-500">{{ __("Stored only on this POS terminal. The Local Agent listens on localhost and restricts requests to the configured ERPNext origin and printer.") }}</p>
+                                                                </div>
+
+                                                                <button v-if="printProviderSupportsHardware" type="button" :disabled="cashDrawerHardwareTesting || !cashDrawerPrinterName" @click="testCashDrawerPrinter" class="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50">
+                                                                        {{ cashDrawerHardwareTesting ? __("Testing...") : __("Test Print") }}
+                                                                </button>
+
+                                                                <div class="border-t border-gray-200 pt-4 space-y-3">
+                                                                        <div class="text-xs font-semibold text-gray-700">{{ __("Cash Drawer") }}</div>
+                                                                        <template v-if="cashDrawerEnabled">
+                                                                                <div>
+                                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Cash Drawer Mode") }}</label>
+                                                                                        <select v-model="cashDrawerMode" @change="handleCashDrawerModeChanged" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+                                                                                                <option value="disabled">{{ __("Disabled on this terminal") }}</option>
+                                                                                                <option value="qz">{{ __("QZ Tray") }}</option>
+                                                                                                <option value="local_agent">{{ __("POSNext Local Agent") }}</option>
+                                                                                        </select>
+                                                                                </div>
+                                                                                <div v-if="cashDrawerMode !== 'disabled'">
+                                                                                        <label class="block text-xs font-medium text-gray-600 mb-1">{{ __("Drawer Command Profile") }}</label>
+                                                                                        <select v-model="cashDrawerCommandProfile" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+                                                                                                <option value="escpos_drawer_1">{{ __("Generic ESC/POS Drawer 1") }}</option>
+                                                                                                <option value="escpos_drawer_2">{{ __("Generic ESC/POS Drawer 2") }}</option>
+                                                                                                <option value="star">{{ __("Star Compatible") }}</option>
+                                                                                        </select>
+                                                                                </div>
+                                                                                <button v-if="cashDrawerMode !== 'disabled'" type="button" :disabled="cashDrawerHardwareTesting || !cashDrawerPrinterName" @click="testCashDrawerFromSetup" class="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50">{{ __("Test Cash Drawer") }}</button>
+                                                                        </template>
+                                                                        <div v-else class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
+                                                                                {{ __("Cash drawer is disabled in POS Settings. Receipt printer settings above still apply to this terminal.") }}
+                                                                        </div>
+                                                                </div>
+
                                                                 <div class="flex justify-end gap-2">
                                                                         <button type="button" @click="showCashDrawerSetupDialog = false" class="px-4 py-2 text-sm font-semibold rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100">{{ __("Cancel") }}</button>
                                                                         <button type="button" @click="saveCashDrawerSetup" class="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700">{{ __("Save Terminal Setup") }}</button>
@@ -1690,9 +1726,20 @@ import {
 	getLocalAgentToken,
 	listLocalAgentPrinters,
 	localAgentHealth,
+	printLocalAgentHTML,
 	saveLocalAgentToken,
-	testLocalAgentPrinter,
 } from "@/utils/localAgent";
+import {
+	getPrintPaperWidth,
+	getPrintProvider,
+	getPrintTerminalId,
+	getReceiptPrinterName,
+	PRINT_PROVIDERS,
+	savePrintPaperWidth,
+	savePrintProvider,
+	savePrintTerminalId,
+	saveReceiptPrinterName,
+} from "@/utils/printProvider";
 import {
 	findPrinters as findQzPrinters,
 	getSavedPrinterName,
@@ -1869,6 +1916,8 @@ const cashDrawerHardwareTesting = ref(false);
 const cashDrawerHardwareStatus = ref("");
 const cashDrawerHardwareStatusError = ref(false);
 const cashDrawerLocalAgentToken = ref("");
+const terminalPrintProvider = ref(getPrintProvider());
+const printPaperWidth = ref(getPrintPaperWidth());
 
 function drawerSettingEnabled(value, fallback = false) {
 	if (value === null || value === undefined || value === "") return fallback;
@@ -1888,10 +1937,35 @@ const requireManagerPinCashDrawer = computed(() =>
 );
 
 const cashDrawerModeLabel = computed(() => {
-        if (cashDrawerMode.value === "qz") return __("QZ Tray");
-        if (cashDrawerMode.value === "local_agent") return __("POSNext Local Agent");
-        return __("Disabled");
+	if (cashDrawerMode.value === "qz") return __("QZ Tray");
+	if (cashDrawerMode.value === "local_agent") return __("POSNext Local Agent");
+	return __("Disabled");
 });
+
+const printProviderLabel = computed(() => {
+	if (terminalPrintProvider.value === PRINT_PROVIDERS.QZ) return __("QZ Tray");
+	if (terminalPrintProvider.value === PRINT_PROVIDERS.LOCAL_AGENT) return __("POSNext Local Agent");
+	if (terminalPrintProvider.value === PRINT_PROVIDERS.MOBILE_AGENT) return __("POSNext Mobile Agent");
+	return __("Browser Print");
+});
+
+const printProviderSupportsHardware = computed(() =>
+	[PRINT_PROVIDERS.QZ, PRINT_PROVIDERS.LOCAL_AGENT].includes(terminalPrintProvider.value)
+);
+
+const setupHardwareMode = computed(() => {
+	if (printProviderSupportsHardware.value) return terminalPrintProvider.value;
+	if (cashDrawerEnabled.value && ["qz", "local_agent"].includes(cashDrawerMode.value)) {
+		return cashDrawerMode.value;
+	}
+	return "disabled";
+});
+
+const setupUsesLocalAgent = computed(
+	() =>
+		terminalPrintProvider.value === PRINT_PROVIDERS.LOCAL_AGENT ||
+		(cashDrawerEnabled.value && cashDrawerMode.value === "local_agent")
+);
 
 const cashDrawerCommandLabel = computed(() => {
         if (cashDrawerCommandProfile.value === "escpos_drawer_2") return __("Generic ESC/POS Drawer 2");
@@ -1918,35 +1992,62 @@ function cashDrawerStorageKey() {
 
 function loadCashDrawerTerminalSettings() {
 	try {
+		terminalPrintProvider.value = getPrintProvider();
+		printPaperWidth.value = getPrintPaperWidth();
 		cashDrawerLocalAgentToken.value = getLocalAgentToken();
+
+		const sharedTerminalId = getPrintTerminalId();
+		const sharedPrinter = getReceiptPrinterName();
 		const raw = localStorage.getItem(cashDrawerStorageKey());
-		if (!raw) {
-			if (!cashDrawerPrinterName.value) cashDrawerPrinterName.value = getSavedPrinterName();
-			return;
-		}
-		const saved = JSON.parse(raw);
+		const saved = raw ? JSON.parse(raw) : null;
+
 		if (["disabled", "qz", "local_agent"].includes(saved?.mode)) {
 			cashDrawerMode.value = saved.mode;
 		}
-		cashDrawerTerminalId.value = String(saved?.terminal_id || "").trim();
-		cashDrawerPrinterName.value = String(saved?.printer_name || "").trim();
-		cashDrawerCommandProfile.value = ["escpos_drawer_1", "escpos_drawer_2", "star"].includes(saved?.command_profile) ? saved.command_profile : "escpos_drawer_1";
-		if (cashDrawerPrinterName.value && !cashDrawerPrinterOptions.value.includes(cashDrawerPrinterName.value)) {
-			cashDrawerPrinterOptions.value = [cashDrawerPrinterName.value, ...cashDrawerPrinterOptions.value];
+
+		cashDrawerTerminalId.value = String(
+			sharedTerminalId || saved?.terminal_id || ""
+		).trim();
+		cashDrawerPrinterName.value = String(
+			sharedPrinter || saved?.printer_name || getSavedPrinterName() || ""
+		).trim();
+		cashDrawerCommandProfile.value = ["escpos_drawer_1", "escpos_drawer_2", "star"].includes(
+			saved?.command_profile
+		)
+			? saved.command_profile
+			: "escpos_drawer_1";
+
+		if (
+			cashDrawerPrinterName.value &&
+			!cashDrawerPrinterOptions.value.includes(cashDrawerPrinterName.value)
+		) {
+			cashDrawerPrinterOptions.value = [
+				cashDrawerPrinterName.value,
+				...cashDrawerPrinterOptions.value,
+			];
 		}
 	} catch (error) {
-		log.warn("Unable to load local cash drawer settings:", error);
+		log.warn("Unable to load local printer/cash drawer settings:", error);
 	}
 }
 
 function saveCashDrawerTerminalSettings(showMessage = false) {
 	try {
-		if (cashDrawerMode.value === "qz" && cashDrawerPrinterName.value) {
+		savePrintProvider(terminalPrintProvider.value);
+		savePrintPaperWidth(printPaperWidth.value);
+		savePrintTerminalId(cashDrawerTerminalId.value);
+		saveReceiptPrinterName(cashDrawerPrinterName.value);
+
+		if (
+			(terminalPrintProvider.value === PRINT_PROVIDERS.QZ || cashDrawerMode.value === "qz") &&
+			cashDrawerPrinterName.value
+		) {
 			savePrinterName(cashDrawerPrinterName.value);
 		}
-		if (cashDrawerMode.value === "local_agent") {
+		if (setupUsesLocalAgent.value) {
 			saveLocalAgentToken(cashDrawerLocalAgentToken.value);
 		}
+
 		localStorage.setItem(
 			cashDrawerStorageKey(),
 			JSON.stringify({
@@ -1957,12 +2058,12 @@ function saveCashDrawerTerminalSettings(showMessage = false) {
 			})
 		);
 		if (showMessage) {
-			showSuccess(__("Cash drawer terminal settings saved on this device."));
+			showSuccess(__("Printer and cash drawer terminal settings saved on this device."));
 		}
 		return true;
 	} catch (error) {
-		log.error("Unable to save local cash drawer settings:", error);
-		showError(__("Could not save cash drawer terminal settings on this device."));
+		log.error("Unable to save local printer/cash drawer settings:", error);
+		showError(__("Could not save printer and cash drawer settings on this device."));
 		return false;
 	}
 }
@@ -2027,20 +2128,22 @@ async function unlockCashDrawerSetup() {
 }
 
 async function refreshCashDrawerPrinters() {
-	if (cashDrawerPrinterLoading.value || cashDrawerMode.value === "disabled") return;
+	const mode = setupHardwareMode.value;
+	if (cashDrawerPrinterLoading.value || mode === "disabled") return;
+
 	cashDrawerPrinterLoading.value = true;
 	cashDrawerHardwareStatus.value = "";
 	cashDrawerHardwareStatusError.value = false;
 	try {
 		let printers = [];
-		if (cashDrawerMode.value === "qz") {
+		if (mode === "qz") {
 			printers = await findQzPrinters();
-			const saved = cashDrawerPrinterName.value || getSavedPrinterName();
+			const saved = cashDrawerPrinterName.value || getReceiptPrinterName() || getSavedPrinterName();
 			if (saved && !cashDrawerPrinterName.value) cashDrawerPrinterName.value = saved;
 			cashDrawerHardwareStatus.value = printers.length
 				? __("QZ Tray connected. {0} printer(s) found.", [printers.length])
 				: __("QZ Tray connected, but no printers were found.");
-		} else if (cashDrawerMode.value === "local_agent") {
+		} else if (mode === "local_agent") {
 			saveLocalAgentToken(cashDrawerLocalAgentToken.value);
 			const health = await localAgentHealth();
 			printers = await listLocalAgentPrinters();
@@ -2049,8 +2152,12 @@ async function refreshCashDrawerPrinters() {
 				printers.length,
 			]);
 		}
+
 		const current = String(cashDrawerPrinterName.value || "").trim();
 		cashDrawerPrinterOptions.value = Array.from(new Set([current, ...printers].filter(Boolean)));
+		if (!current && printers.length === 1) {
+			cashDrawerPrinterName.value = printers[0];
+		}
 	} catch (error) {
 		cashDrawerHardwareStatusError.value = true;
 		cashDrawerHardwareStatus.value = error?.message || __("Unable to discover printers.");
@@ -2058,11 +2165,28 @@ async function refreshCashDrawerPrinters() {
 	cashDrawerPrinterLoading.value = false;
 }
 
+async function handlePrintProviderChanged() {
+	cashDrawerHardwareStatus.value = "";
+	cashDrawerHardwareStatusError.value = false;
+
+	if (
+		[PRINT_PROVIDERS.QZ, PRINT_PROVIDERS.LOCAL_AGENT].includes(terminalPrintProvider.value) &&
+		cashDrawerMode.value !== "disabled"
+	) {
+		cashDrawerMode.value = terminalPrintProvider.value;
+	}
+
+	if (terminalPrintProvider.value === PRINT_PROVIDERS.QZ && !cashDrawerPrinterName.value) {
+		cashDrawerPrinterName.value = getReceiptPrinterName() || getSavedPrinterName();
+	}
+	await refreshCashDrawerPrinters();
+}
+
 async function handleCashDrawerModeChanged() {
 	cashDrawerHardwareStatus.value = "";
 	cashDrawerHardwareStatusError.value = false;
 	if (cashDrawerMode.value === "qz" && !cashDrawerPrinterName.value) {
-		cashDrawerPrinterName.value = getSavedPrinterName();
+		cashDrawerPrinterName.value = getReceiptPrinterName() || getSavedPrinterName();
 	}
 	await refreshCashDrawerPrinters();
 }
@@ -2080,27 +2204,37 @@ function escapeReceiptText(value) {
 function buildCashDrawerTestReceipt() {
 	const terminal = escapeReceiptText(String(cashDrawerTerminalId.value || "-").trim() || "-");
 	const printer = escapeReceiptText(String(cashDrawerPrinterName.value || "-").trim() || "-");
-	const mode = escapeReceiptText(cashDrawerModeLabel.value);
-	return `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,Tahoma,sans-serif;width:72mm;margin:0;padding:2mm;font-size:12px}h3{text-align:center;margin:0 0 8px}div{margin:3px 0}.ok{text-align:center;font-weight:700;margin-top:10px}</style></head><body><h3>POSNext Printer Test</h3><div>Terminal: ${terminal}</div><div>Printer: ${printer}</div><div>Mode: ${mode}</div><div class="ok">Printer connection successful.</div></body></html>`;
+	const mode = escapeReceiptText(printProviderLabel.value);
+	return `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:${printPaperWidth.value}mm auto;margin:0}body{font-family:Arial,Tahoma,sans-serif;width:${Math.max(48, Number(printPaperWidth.value) - 8)}mm;margin:0;padding:2mm;font-size:12px}h3{text-align:center;margin:0 0 8px}div{margin:3px 0}.ok{text-align:center;font-weight:700;margin-top:10px}</style></head><body><h3>POSNext Printer Test</h3><div>Terminal: ${terminal}</div><div>Printer: ${printer}</div><div>Method: ${mode}</div><div>Paper: ${printPaperWidth.value} mm</div><div class="ok">Printer connection successful.</div></body></html>`;
 }
 
 async function testCashDrawerPrinter() {
 	if (cashDrawerHardwareTesting.value) return;
 	const printer = String(cashDrawerPrinterName.value || "").trim();
+	if (!printProviderSupportsHardware.value) {
+		showWarning(__("Select QZ Tray or POSNext Local Agent as the Print Method first."));
+		return;
+	}
 	if (!printer) {
 		showWarning(__("Select a receipt printer first."));
 		return;
 	}
+
 	cashDrawerHardwareTesting.value = true;
 	try {
-		if (cashDrawerMode.value === "qz") {
+		if (terminalPrintProvider.value === PRINT_PROVIDERS.QZ) {
 			savePrinterName(printer);
-			await qzPrintHTML(buildCashDrawerTestReceipt(), printer);
-		} else if (cashDrawerMode.value === "local_agent") {
+			await qzPrintHTML(buildCashDrawerTestReceipt(), printer, {
+				width: printPaperWidth.value,
+			});
+		} else if (terminalPrintProvider.value === PRINT_PROVIDERS.LOCAL_AGENT) {
 			saveLocalAgentToken(cashDrawerLocalAgentToken.value);
-			await testLocalAgentPrinter(printer, cashDrawerTerminalId.value);
-		} else {
-			throw new Error(__("Select a cash drawer mode first."));
+			await printLocalAgentHTML(buildCashDrawerTestReceipt(), {
+				printerName: printer,
+				terminalId: cashDrawerTerminalId.value,
+				paperWidthMm: printPaperWidth.value,
+				jobName: "POSNext Printer Test",
+			});
 		}
 		showSuccess(__("Test print sent to {0}.", [printer]));
 	} catch (error) {
@@ -2129,22 +2263,31 @@ function testCashDrawerFromSetup() {
 }
 
 function saveCashDrawerSetup() {
-        if (!cashDrawerSetupUnlocked.value) return;
-        if (cashDrawerMode.value !== "disabled" && !String(cashDrawerTerminalId.value || "").trim()) {
-                showWarning(__("Terminal ID is required when the cash drawer is enabled."));
-                return;
-        }
-        if (cashDrawerMode.value !== "disabled" && !effectiveCashDrawerPrinterName.value) {
-                showWarning(__("Select a receipt printer for this terminal."));
-                return;
-        }
-        if (cashDrawerMode.value === "local_agent" && !String(cashDrawerLocalAgentToken.value || "").trim()) {
-                showWarning(__("Enter the POSNext Local Agent token for this terminal."));
-                return;
-        }
-        if (!saveCashDrawerTerminalSettings(false)) return;
-        showSuccess(__("Cash drawer terminal setup saved on this device."));
-        showCashDrawerSetupDialog.value = false;
+	if (!cashDrawerSetupUnlocked.value) return;
+
+	if (terminalPrintProvider.value === PRINT_PROVIDERS.MOBILE_AGENT) {
+		showWarning(__("POSNext Mobile Agent will be available in a later update."));
+		return;
+	}
+
+	const drawerHardwareEnabled = cashDrawerEnabled.value && cashDrawerMode.value !== "disabled";
+	const terminalHardwareEnabled = printProviderSupportsHardware.value || drawerHardwareEnabled;
+
+	if (terminalHardwareEnabled && !String(cashDrawerTerminalId.value || "").trim()) {
+		showWarning(__("Terminal ID is required for this hardware setup."));
+		return;
+	}
+	if (terminalHardwareEnabled && !String(cashDrawerPrinterName.value || "").trim()) {
+		showWarning(__("Select a receipt printer for this terminal."));
+		return;
+	}
+	if (setupUsesLocalAgent.value && !String(cashDrawerLocalAgentToken.value || "").trim()) {
+		showWarning(__("Enter the POSNext Local Agent token for this terminal."));
+		return;
+	}
+	if (!saveCashDrawerTerminalSettings(false)) return;
+	showSuccess(__("Printer and cash drawer terminal setup saved on this device."));
+	showCashDrawerSetupDialog.value = false;
 }
 
 function resolvedCashDrawerReason() {

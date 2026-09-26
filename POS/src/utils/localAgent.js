@@ -120,3 +120,32 @@ export async function openLocalAgentCashDrawer(
 		throw error;
 	}
 }
+
+export async function printLocalAgentHTML(
+	html,
+	{
+		printerName = "",
+		terminalId = "",
+		paperWidthMm = 80,
+		jobName = "POSNext Receipt",
+	} = {}
+) {
+	const content = String(html || "");
+	if (!content.trim()) {
+		throw new Error("Local Agent print HTML is empty.");
+	}
+
+	const printer = String(printerName || "").trim();
+
+	return agentRequest("/print/html", {
+		method: "POST",
+		body: {
+			printer_name: printer || null,
+			terminal_id: String(terminalId || "").trim(),
+			html: content,
+			job_name: String(jobName || "POSNext Receipt").trim(),
+			paper_width_mm: Number(paperWidthMm) === 58 ? 58 : 80,
+		},
+		timeoutMs: 30000,
+	});
+}
