@@ -1295,7 +1295,7 @@ async function retryEodPrint() {
 		closeDialog();
 	} catch (err) {
 		console.warn("[eod] retry print failed", err);
-		showWarning(__("EOD report did not print. Please check QZ Tray and retry."));
+		showWarning(__("EOD report did not print. Please check the configured print provider and retry."));
 	} finally {
 		retryPrintLoading.value = false;
 	}
