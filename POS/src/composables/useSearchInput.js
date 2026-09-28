@@ -1,5 +1,7 @@
 import { ref, watch, nextTick, onUnmounted } from "vue";
 import { QueuedMutex } from "@/utils/mutex";
+import { usePOSSettingsStore } from "@/stores/posSettings";
+import { playScanError, playScanSuccess } from "@/utils/scannerSound";
 
 /**
  * Composable for search input, barcode scanning, and auto-add logic.
@@ -24,6 +26,8 @@ import { QueuedMutex } from "@/utils/mutex";
  * @param {import('vue').Ref<boolean>} options.isAnyDialogOpen
  */
 export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialogOpen }) {
+        const posSettingsStore = usePOSSettingsStore();
+
 	// --- Reactive state (exposed) ---
 	const searchInputRef = ref(null);
 	const scannerEnabled = ref(false);
@@ -150,7 +154,16 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 			try {
 				const item = await itemStore.searchByBarcode(barcode);
 				if (item) {
-					onItemFound(item, shouldAutoAdd);
+					const accepted = onItemFound(item, shouldAutoAdd);
+
+					if (accepted !== false) {
+						playScanSuccess({
+							enabled: posSettingsStore.enableScanSounds,
+							soundEnabled: posSettingsStore.enableScanSuccessSound,
+							volume: posSettingsStore.scanSuccessVolume,
+						});
+					}
+
 					focusSearchInput();
 					return;
 				}
@@ -162,6 +175,11 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 			// Note: we cannot fall back to filteredItems here because
 			// clearSearch() was called before the API request, so
 			// filteredItems would contain ALL cached items (not search results).
+			playScanError({
+					enabled: posSettingsStore.enableScanSounds,
+					soundEnabled: posSettingsStore.enableScanErrorSound,
+					volume: posSettingsStore.scanErrorVolume,
+				});
 			showWarning(__("Item Not Found: No item found with barcode: {0}", [barcode]));
 			focusSearchInput();
 		});

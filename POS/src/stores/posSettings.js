@@ -69,6 +69,12 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allow_print_last_invoice: 0,
 		silent_print: 0,
 		return_invoice_print_format: "",
+		// Scanner Sound
+		enable_scan_sounds: 1,
+		enable_scan_success_sound: 1,
+		enable_scan_error_sound: 1,
+		scan_success_volume: 70,
+		scan_error_volume: 100,
 		// Cash Drawer
 		enable_cash_drawer: 0,
 		auto_open_cash_sale: 1,
@@ -171,6 +177,27 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const returnInvoicePrintFormat = computed(
 		() => String(settings.value.return_invoice_print_format || "").trim()
 	);
+
+	// Computed - Scanner Sound
+	const enableScanSounds = computed(() =>
+		settingEnabled(settings.value.enable_scan_sounds, true)
+	);
+	const enableScanSuccessSound = computed(() =>
+		settingEnabled(settings.value.enable_scan_success_sound, true)
+	);
+	const enableScanErrorSound = computed(() =>
+		settingEnabled(settings.value.enable_scan_error_sound, true)
+	);
+	const scanSuccessVolume = computed(() => {
+		const value = Number(settings.value.scan_success_volume);
+		if (!Number.isFinite(value)) return 70;
+		return Math.min(100, Math.max(0, value));
+	});
+	const scanErrorVolume = computed(() => {
+		const value = Number(settings.value.scan_error_volume);
+		if (!Number.isFinite(value)) return 100;
+		return Math.min(100, Math.max(0, value));
+	});
 
 	// Computed - Delivery
 	const useDeliveryCharges = computed(() => Boolean(settings.value.use_delivery_charges));
@@ -300,6 +327,11 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 			allow_print_last_invoice: 0,
 			silent_print: 0,
 			return_invoice_print_format: "",
+			enable_scan_sounds: 1,
+			enable_scan_success_sound: 1,
+			enable_scan_error_sound: 1,
+			scan_success_volume: 70,
+			scan_error_volume: 100,
 			enable_cash_drawer: 0,
 			auto_open_cash_sale: 1,
 			auto_open_cash_refund: 1,
@@ -430,6 +462,13 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allowPrintLastInvoice,
 		silentPrint,
 		returnInvoicePrintFormat,
+
+		// Computed - Scanner Sound
+		enableScanSounds,
+		enableScanSuccessSound,
+		enableScanErrorSound,
+		scanSuccessVolume,
+		scanErrorVolume,
 
 		// Computed - Delivery
 		useDeliveryCharges,
