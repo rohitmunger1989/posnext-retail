@@ -1,4 +1,4 @@
-import { ref, watch, nextTick, onUnmounted } from "vue";
+import { ref, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { QueuedMutex } from "@/utils/mutex";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import { playScanError, playScanSuccess } from "@/utils/scannerSound";
@@ -30,12 +30,107 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 
 	// --- Reactive state (exposed) ---
 	const searchInputRef = ref(null);
-	const scannerEnabled = ref(false);
-	const autoAddEnabled = ref(false);
+	const scannerEnabled = ref(true);
+	const autoAddEnabled = ref(true);
 
 	// --- Internal (non-reactive) ---
 	let autoSearchTimer = null;
 	const barcodeQueue = new QueuedMutex({ timeout: 10000, name: "BarcodeSearch" });
+
+	// -------------------------------------------------------------------------
+	// Persistent barcode scanner focus
+	// -------------------------------------------------------------------------
+
+	function isTextEntryElement(element) {
+		if (!element || element === document.body) return false;
+		if (element === searchInputRef.value) return false;
+
+		return Boolean(
+			element.matches?.(
+				'input, textarea, select, [contenteditable="true"], [contenteditable=""]'
+			)
+		);
+	}
+
+	function restoreScannerFocus() {
+		if (!scannerEnabled.value) return;
+		if (isAnyDialogOpen?.value) return;
+		if (document.hidden) return;
+
+		// Do not steal focus while the cashier is deliberately typing
+		// into another form field.
+		if (isTextEntryElement(document.activeElement)) return;
+
+		nextTick(() => {
+			if (!scannerEnabled.value) return;
+			if (isAnyDialogOpen?.value) return;
+			if (document.hidden) return;
+			if (isTextEntryElement(document.activeElement)) return;
+
+			focusSearchInput();
+		});
+	}
+
+	function queueScannerFocus() {
+		window.setTimeout(() => {
+			restoreScannerFocus();
+		}, 0);
+	}
+
+	function handleScannerWindowFocus() {
+		queueScannerFocus();
+	}
+
+	function handleScannerVisibilityChange() {
+		if (!document.hidden) {
+			queueScannerFocus();
+		}
+	}
+
+	function handleScannerPointerUp() {
+		queueScannerFocus();
+	}
+
+	onMounted(() => {
+		window.addEventListener("focus", handleScannerWindowFocus);
+		document.addEventListener(
+			"visibilitychange",
+			handleScannerVisibilityChange
+		);
+		document.addEventListener(
+			"pointerup",
+			handleScannerPointerUp,
+			true
+		);
+
+		// Initial POS load / browser refresh.
+		queueScannerFocus();
+	});
+
+	// When a payment/customer/return/etc. dialog closes,
+	// immediately return the scanner cursor to the search field.
+	watch(
+		() => Boolean(isAnyDialogOpen?.value),
+		(isOpen, wasOpen) => {
+			if (wasOpen && !isOpen) {
+				queueScannerFocus();
+			}
+		}
+	);
+
+	onUnmounted(() => {
+		window.removeEventListener("focus", handleScannerWindowFocus);
+		document.removeEventListener(
+			"visibilitychange",
+			handleScannerVisibilityChange
+		);
+		document.removeEventListener(
+			"pointerup",
+			handleScannerPointerUp,
+			true
+		);
+	});
+
 
 	// ---- Timer helpers ----
 
