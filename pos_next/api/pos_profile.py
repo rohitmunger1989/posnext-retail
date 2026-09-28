@@ -370,10 +370,22 @@ def get_sales_persons(pos_profile=None):
 			if frappe.db.has_column("Sales Person", "company") and company:
 				filters["company"] = company
 
+		fields = [
+			"name",
+			"sales_person_name",
+			"commission_rate",
+			"employee",
+		]
+
+		# Optional custom field. POS must continue working normally on
+		# installations where custom_sales_person_id does not exist.
+		if frappe.get_meta("Sales Person").has_field("custom_sales_person_id"):
+			fields.append("custom_sales_person_id")
+
 		sales_persons = frappe.get_list(
 			"Sales Person",
 			filters=filters,
-			fields=["name", "sales_person_name", "commission_rate", "employee"],
+			fields=fields,
 			order_by="sales_person_name",
 			limit_page_length=0,
 		)

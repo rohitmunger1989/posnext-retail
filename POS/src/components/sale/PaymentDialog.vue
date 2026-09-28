@@ -167,6 +167,7 @@
 												: __('Select sales person...')
 										"
 										@focus="onSalesPersonFocus"
+										@keydown.enter.prevent="handleSalesPersonEnter"
 										@blur="handleSalesPersonBlur"
 										class="w-full px-3 py-2 ps-3 pe-8 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
 										:class="
@@ -203,9 +204,15 @@
 											@mousedown.prevent="addSalesPerson(person)"
 											class="flex items-center justify-between p-2 hover:bg-purple-50 cursor-pointer border-b border-purple-100 last:border-b-0 text-xs"
 										>
-											<span class="font-medium text-gray-900">{{
-												person.sales_person_name || person.name
-											}}</span>
+											<span class="font-medium text-gray-900">
+										<span
+											v-if="person.custom_sales_person_id"
+											class="font-bold text-purple-700"
+										>
+											{{ person.custom_sales_person_id }} —
+										</span>
+										{{ person.sales_person_name || person.name }}
+									</span>
 											<span
 												v-if="person.commission_rate"
 												class="text-purple-500 text-[10px]"
@@ -311,6 +318,7 @@
 											: __('Select sales person...')
 									"
 									@focus="onSalesPersonFocus"
+									@keydown.enter.prevent="handleSalesPersonEnter"
 									@blur="handleSalesPersonBlur"
 									class="w-full px-3 py-2 ps-3 pe-8 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
 									:class="
@@ -347,9 +355,15 @@
 										@mousedown.prevent="addSalesPerson(person)"
 										class="flex items-center justify-between p-2 hover:bg-purple-50 cursor-pointer border-b border-purple-100 last:border-b-0 text-xs"
 									>
-										<span class="font-medium text-gray-900">{{
-											person.sales_person_name || person.name
-										}}</span>
+										<span class="font-medium text-gray-900">
+										<span
+											v-if="person.custom_sales_person_id"
+											class="font-bold text-purple-700"
+										>
+											{{ person.custom_sales_person_id }} —
+										</span>
+										{{ person.sales_person_name || person.name }}
+									</span>
 										<span
 											v-if="person.commission_rate"
 											class="text-purple-500 text-[10px]"
@@ -2513,7 +2527,9 @@ const availableSalesPersons = computed(() => {
 			// Filter by search term if provided
 			if (searchLower) {
 				const name = (person.sales_person_name || person.name || "").toLowerCase();
-				return name.includes(searchLower);
+				const salesPersonId = String(person.custom_sales_person_id || "").toLowerCase();
+
+				return name.includes(searchLower) || salesPersonId.includes(searchLower);
 			}
 			return true;
 		})
@@ -2541,6 +2557,36 @@ const isSalesPersonValid = computed(() => {
 });
 
 // Helper functions for sales persons
+function handleSalesPersonEnter() {
+	const value = String(salesPersonSearch.value || "").trim();
+
+	if (!value) return;
+
+	// custom_sales_person_id is unique, so an exact ID selects immediately.
+	const exactIdMatch = salesPersons.value.find(
+		(person) =>
+			String(person.custom_sales_person_id || "").trim().toLowerCase() ===
+			value.toLowerCase()
+	);
+
+	if (exactIdMatch) {
+		const alreadySelected = selectedSalesPersons.value.some(
+			(person) => person.sales_person === exactIdMatch.name
+		);
+
+		if (!alreadySelected || settingsStore.isSingleSalesPerson) {
+			addSalesPerson(exactIdMatch);
+		}
+
+		return;
+	}
+
+	// If the search leaves exactly one result, Enter selects that result too.
+	if (availableSalesPersons.value.length === 1) {
+		addSalesPerson(availableSalesPersons.value[0]);
+	}
+}
+
 function addSalesPerson(person) {
 	// For Single mode, replace the existing selection with 100%
 	if (settingsStore.isSingleSalesPerson) {
@@ -2548,6 +2594,7 @@ function addSalesPerson(person) {
 			{
 				sales_person: person.name,
 				sales_person_name: person.sales_person_name || person.name,
+				custom_sales_person_id: person.custom_sales_person_id || "",
 				allocated_percentage: 100,
 				commission_rate: person.commission_rate,
 			},
@@ -2560,6 +2607,7 @@ function addSalesPerson(person) {
 		selectedSalesPersons.value.push({
 			sales_person: person.name,
 			sales_person_name: person.sales_person_name || person.name,
+			custom_sales_person_id: person.custom_sales_person_id || "",
 			allocated_percentage: 0, // Will be recalculated
 			commission_rate: person.commission_rate,
 		});
