@@ -79,10 +79,14 @@
 </template>
 
 <script setup>
+import { usePOSSettingsStore } from "@/stores/posSettings";
+import { playScanError, playScanSuccess } from "@/utils/scannerSound";
 import { call } from "@/utils/apiWrapper";
 import { QueuedMutex } from "@/utils/mutex";
 import { FeatherIcon } from "frappe-ui";
 import { nextTick, onUnmounted, reactive, ref, watch } from "vue";
+
+const scanSoundSettings = usePOSSettingsStore();
 
 const props = defineProps({
 	posProfile: { type: String, required: true },
@@ -188,8 +192,21 @@ function scanExact() {
 		busy.value = true;
 		try {
 			await addExactBarcode(barcode);
+
+			playScanSuccess({
+				enabled: scanSoundSettings.enableScanSounds,
+				soundEnabled: scanSoundSettings.enableScanSuccessSound,
+				volume: scanSoundSettings.scanSuccessVolume,
+			});
 		} catch (error) {
 			console.error("Retail item scan failed:", error);
+
+			playScanError({
+				enabled: scanSoundSettings.enableScanSounds,
+				soundEnabled: scanSoundSettings.enableScanErrorSound,
+				volume: scanSoundSettings.scanErrorVolume,
+			});
+
 			setStatus("error", __("Item not found: {0}", [barcode]));
 		} finally {
 			busy.value = false;

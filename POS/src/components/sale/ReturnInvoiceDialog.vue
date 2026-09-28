@@ -1358,6 +1358,8 @@
 </template>
 
 <script setup>
+import { usePOSSettingsStore } from "@/stores/posSettings";
+import { playScanError, playScanSuccess } from "@/utils/scannerSound";
 import { useOfflineStatus } from "@/composables/useOfflineStatus";
 import { useToast } from "@/composables/useToast";
 import { getPaymentIcon } from "@/utils/payment";
@@ -1386,6 +1388,8 @@ const MAX_SUGGESTIONS = 8;
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_SEARCH_LENGTH = 2;
 const MIN_SERVER_SEARCH_LENGTH = 4;
+
+const scanSoundSettings = usePOSSettingsStore();
 
 const props = defineProps({
 	modelValue: Boolean,
@@ -2133,6 +2137,20 @@ function focusReturnBarcodeInput() {
 function setReturnBarcodeStatus(type, message) {
 	returnBarcodeStatus.type = type;
 	returnBarcodeStatus.message = message;
+
+	if (type === "success") {
+		playScanSuccess({
+			enabled: scanSoundSettings.enableScanSounds,
+			soundEnabled: scanSoundSettings.enableScanSuccessSound,
+			volume: scanSoundSettings.scanSuccessVolume,
+		});
+	} else if (type === "error") {
+		playScanError({
+			enabled: scanSoundSettings.enableScanSounds,
+			soundEnabled: scanSoundSettings.enableScanErrorSound,
+			volume: scanSoundSettings.scanErrorVolume,
+		});
+	}
 	if (returnBarcodeStatusTimer) clearTimeout(returnBarcodeStatusTimer);
 	returnBarcodeStatusTimer = setTimeout(() => {
 		returnBarcodeStatus.type = "";
