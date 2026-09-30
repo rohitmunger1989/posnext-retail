@@ -86,9 +86,12 @@ def get_initial_data():
 		"status": shift["status"],
 	}
 
+	company_logo = frappe.get_cached_value("Company", pos_profile.company, "company_logo") or ""
+
 	result["pos_profile"] = {
 		"name": pos_profile.name,
 		"company": pos_profile.company,
+		"company_logo": company_logo,
 		"currency": pos_profile.currency,
 		"warehouse": pos_profile.warehouse,
 		"selling_price_list": pos_profile.selling_price_list,

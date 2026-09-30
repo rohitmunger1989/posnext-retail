@@ -562,6 +562,7 @@
 				:payment-hub-config="paymentHubConfig"
 				:applied-offer-count="cartStore.appliedOffers.length"
 				@payment-completed="handlePaymentCompleted"
+				@payment-updated="handleCustomerDisplayPaymentUpdated"
 				@update-additional-discount="handleAdditionalDiscountUpdate"
 				@show-offers="uiStore.showOffersDialog = true"
 				@show-coupon="uiStore.showCouponDialog = true"
@@ -1183,6 +1184,7 @@ import { useStockStore } from "@/stores/stock";
 import { usePOSCartStore } from "@/stores/posCart";
 import { usePOSDraftsStore } from "@/stores/posDrafts";
 import { usePOSSettingsStore } from "@/stores/posSettings";
+import { useCustomerDisplayStore } from "@/stores/customerDisplay";
 import { usePOSShiftStore } from "@/stores/posShift";
 import { usePOSSyncStore } from "@/stores/posSync";
 import { usePOSUIStore } from "@/stores/posUI";
@@ -1201,8 +1203,239 @@ const itemStore = useItemSearchStore();
 const stockStore = useStockStore();
 const customerSearchStore = useCustomerSearchStore();
 const bootstrapStore = useBootstrapStore();
+const customerDisplayStore = useCustomerDisplayStore();
+let customerDisplayAutoOpenAttempted = false;
+let cartRecoveryInitialized = false;
+let cartRecoveryRestoring = false;
+let cartRecoveryProfile = null;
+let cartRecoveryVerificationTimer = null;
+const CART_RECOVERY_PREFIX = "posnext_active_cart_recovery_v1";
+
+function cartRecoveryKey(profile = shiftStore.profileName) {
+	return `${CART_RECOVERY_PREFIX}:${String(profile || "default")}`;
+}
+
+// Remove the recovery synchronously when the cashier explicitly discards a
+// transaction or an invoice has been successfully handed off/saved. A pending
+// post-flush Vue watcher should never be the only cleanup mechanism.
+function discardActiveCartRecovery(profile = shiftStore.profileName) {
+	if (cartRecoveryVerificationTimer) {
+		window.clearTimeout(cartRecoveryVerificationTimer);
+		cartRecoveryVerificationTimer = null;
+	}
+	if (!profile || typeof sessionStorage === "undefined") return;
+	try {
+		sessionStorage.removeItem(cartRecoveryKey(profile));
+	} catch (error) {
+		log.warn("Could not discard active cart recovery:", error);
+	}
+}
+
+// Save a lightweight snapshot synchronously. Do not rely on the Vue post-flush
+// cycle: browser refresh can occur before that deferred watcher runs.
+function saveActiveCartRecovery() {
+	// The cashier can add items before asynchronous POS bootstrap completes.
+	// Saving must not depend on restore initialization; only skip while the
+	// restore procedure itself is manipulating the cart.
+	if (cartRecoveryRestoring || typeof sessionStorage === "undefined") return;
+	const profile = shiftStore.profileName || cartStore.posProfile;
+	if (!profile) return;
+	try {
+		if (!cartStore.invoiceItems?.length) {
+			// Transient empty cart states occur during POS bootstrap and offer/customer
+			// recalculation. Only an explicit Clear or successful transaction may
+			// delete an existing recovery snapshot.
+			return;
+		}
+		const rawCustomer = cartStore.customer || null;
+		const snapshot = {
+			profile,
+			saved_at: Date.now(),
+			items: JSON.parse(JSON.stringify(cartStore.invoiceItems)),
+			customer: rawCustomer ? JSON.parse(JSON.stringify(rawCustomer)) : null,
+			additional_discount: Number(cartStore.additionalDiscount || 0),
+		};
+		sessionStorage.setItem(cartRecoveryKey(profile), JSON.stringify(snapshot));
+	} catch (error) {
+		// A silent quota/serialization failure previously looked like a successful save.
+		log.warn("Could not save active POS cart recovery:", error);
+	}
+}
+
+async function restoreActiveCartRecovery(profile, { verify = false } = {}) {
+	if (!profile || typeof sessionStorage === "undefined" || cartRecoveryRestoring) return false;
+	if (cartRecoveryInitialized && !verify && cartRecoveryProfile === profile) return false;
+	cartRecoveryRestoring = true;
+	let restored = false;
+	try {
+		const raw = sessionStorage.getItem(cartRecoveryKey(profile));
+		if (!raw) return false;
+		const snapshot = JSON.parse(raw);
+		const age = Date.now() - Number(snapshot?.saved_at || 0);
+		if (
+			snapshot?.profile !== profile || age < 0 || age > 2 * 60 * 60 * 1000 ||
+			!Array.isArray(snapshot.items) || !snapshot.items.length
+		) {
+			sessionStorage.removeItem(cartRecoveryKey(profile));
+			return false;
+		}
+		// A populated cart represents a sale already in progress. Never overwrite
+		// it with a stored snapshot. Verification may only restore an EMPTY cart.
+		if (cartStore.invoiceItems?.length) return false;
+
+		cartStore.invoiceItems = JSON.parse(JSON.stringify(snapshot.items));
+		cartStore.additionalDiscount = Number(snapshot.additional_discount || 0);
+		cartStore.rebuildIncrementalCache();
+		restored = cartStore.invoiceItems.length > 0;
+		if (!restored) return false;
+
+		// Set the saved customer without waiting for a customer API request to
+		// complete. Awaiting slow network calls must not block recovery of items.
+		if (snapshot.customer) {
+			try {
+				await cartStore.setCustomer(snapshot.customer);
+				await customerDisplayStore.refreshCustomerFinancials(snapshot.customer);
+			} catch (error) {
+				log.warn("Recovered cart; customer refresh failed:", error);
+			}
+		}
+		log.info("Recovered unfinished POS transaction", { profile, items: cartStore.invoiceItems.length });
+		return true;
+	} catch (error) {
+		log.warn("Active cart recovery failed; stored snapshot retained:", error);
+		return false;
+	} finally {
+		cartRecoveryRestoring = false;
+		cartRecoveryInitialized = true;
+		cartRecoveryProfile = profile;
+		if (restored) saveActiveCartRecovery();
+	}
+}
+
+// A second check after the UI and async shift/profile initialization settle
+// handles bootstraps that temporarily reset the cart after the first restore.
+// It never restores a deliberately cleared or completed sale, because those
+// paths synchronously delete the sessionStorage snapshot.
+function verifyActiveCartRecoveryAfterInit(profile) {
+	if (cartRecoveryVerificationTimer) window.clearTimeout(cartRecoveryVerificationTimer);
+	cartRecoveryVerificationTimer = window.setTimeout(async () => {
+		cartRecoveryVerificationTimer = null;
+		if (shiftStore.profileName !== profile || cartStore.invoiceItems?.length) return;
+		try {
+			if (sessionStorage.getItem(cartRecoveryKey(profile))) {
+				await restoreActiveCartRecovery(profile, { verify: true });
+			}
+		} catch (error) {
+			log.warn("Delayed cart recovery verification failed:", error);
+		}
+	}, 950);
+}
+
+// Flush immediately on browser reload/navigation, even if a reactive watcher
+// was delayed by another operation. A confirmed Clear / paid sale has already
+// removed the snapshot and emptied the cart, so this cannot resurrect it.
+function flushActiveCartRecoveryBeforeUnload() {
+	// Persist a real unfinished cart even if bootstrap has not completed.
+	// A deliberate Clear/successful checkout leaves an empty cart, so this
+	// cannot recreate a discarded recovery snapshot.
+	saveActiveCartRecovery();
+}
+if (typeof window !== "undefined") {
+	window.addEventListener("pagehide", flushActiveCartRecoveryBeforeUnload);
+}
+
 // Note: settingsStore is an alias to posSettingsStore (same Pinia store singleton)
 const settingsStore = posSettingsStore;
+
+// Customer Display is initialized only after POS Profile settings are loaded.
+// The display store mirrors cart changes locally and is deliberately non-blocking.
+watch(
+	() => [shiftStore.profileName, posSettingsStore.isLoaded, posSettingsStore.settings.customer_display_enabled],
+	async ([profile, loaded]) => {
+		if (!profile || !loaded) return;
+		if (Number(posSettingsStore.settings.customer_display_enabled || 0) === 1) {
+			const ready = await customerDisplayStore.initialize(profile);
+			if (ready && !customerDisplayAutoOpenAttempted) {
+				customerDisplayAutoOpenAttempted = true;
+				// Best-effort automatic second-screen window. Browsers may require
+				// popups/window-management permission once; the named window prevents duplicates.
+				setTimeout(async () => {
+					const displayWindow = await customerDisplayStore.openDisplayWindow({ preferSecondary: true });
+					if (displayWindow) {
+						try { displayWindow.blur(); window.focus(); } catch (_) {}
+					}
+				}, 250);
+			}
+		} else {
+			customerDisplayStore.stop();
+		}
+	},
+	{ immediate: true }
+);
+
+// Active cart recovery is restored only after POS initialization has finished loading
+// the default customer/settings. Restoring earlier can be overwritten by setDefaultCustomer().
+// The actual restore calls live in initPOS() and handleShiftOpened().
+
+watch(
+	() => JSON.stringify({
+		items: (cartStore.invoiceItems || []).map((item) => ({
+			item_code: item.item_code,
+			uom: item.uom || item.stock_uom,
+			quantity: item.quantity ?? item.qty,
+			rate: item.rate,
+			price_list_rate: item.price_list_rate,
+			discount_amount: item.discount_amount,
+			discount_percentage: item.discount_percentage,
+		})),
+		customer: cartStore.customer?.name || cartStore.customer?.customer || cartStore.customer || null,
+		additional_discount: Number(cartStore.additionalDiscount || 0),
+	}),
+	() => saveActiveCartRecovery(),
+	{ flush: "sync" }
+);
+
+// Customer Display live-cart bridge.
+// Keep this watcher in POSSale as the authoritative UI-side signal because the
+// cart visible on this page can be mutated through several composables/stores.
+// PaymentDialog publishes payment state separately; this bridge guarantees that
+// scans, quantity/rate/discount changes, customer changes, and recalculated totals
+// reach the customer display immediately before Checkout is opened.
+watch(
+	() => {
+		const customer = cartStore.customer || null;
+		return JSON.stringify({
+			items: (cartStore.invoiceItems || []).map((item) => ({
+				item_code: item.item_code || "",
+				item_name: item.item_name || "",
+				barcode: item.barcode || item.item_barcode || "",
+				image: item.image || item.item_image || item.website_image || "",
+				qty: Number(item.quantity ?? item.qty ?? 0),
+				rate: Number(item.rate ?? 0),
+				price_list_rate: Number(item.price_list_rate ?? 0),
+				amount: Number(item.amount ?? 0),
+				discount_amount: Number(item.discount_amount ?? 0),
+				discount_percentage: Number(item.discount_percentage ?? 0),
+			})),
+			customer: customer
+				? {
+					name: customer.name || customer.customer || customer.customer_name || String(customer),
+					customer_name: customer.customer_name || customer.full_name || "",
+					loyalty_points: Number(customer.loyalty_points ?? customer.available_loyalty_points ?? customer.points ?? 0),
+					credit: Number(customer.customer_credit ?? customer.credit_balance ?? customer.available_credit ?? 0),
+				}
+				: null,
+			subtotal: Number(cartStore.subtotal || 0),
+			discount: Number(cartStore.totalDiscount || 0),
+			grand_total: Number(cartStore.grandTotal || 0),
+		});
+	},
+	() => {
+		if (!customerDisplayStore.initialized || !customerDisplayStore.isEnabled) return;
+		customerDisplayStore.scheduleCartSync();
+	},
+	{ flush: "post" }
+);
 
 // Real-time stock updates
 const { onStockUpdate } = useRealtimeStock();
@@ -1604,6 +1837,11 @@ onMounted(async () => {
 		stopActivityTracking();
 		qzDisconnect();
 		window.removeEventListener(PRINT_PROVIDER_CHANGED_EVENT, syncTerminalPrintProvider);
+		window.removeEventListener("pagehide", flushActiveCartRecoveryBeforeUnload);
+		if (cartRecoveryVerificationTimer) {
+			window.clearTimeout(cartRecoveryVerificationTimer);
+			cartRecoveryVerificationTimer = null;
+		}
 		if (agentStatusTimer) {
 			window.clearInterval(agentStatusTimer);
 			agentStatusTimer = null;
@@ -1705,6 +1943,11 @@ onMounted(async () => {
 
 		// Load tax rules (depends on settings being loaded)
 		await cartStore.loadTaxRules(shiftStore.profileName, posSettingsStore.settings);
+
+		// Restore the active POS transaction only after default customer/settings are ready,
+		// otherwise setDefaultCustomer() can overwrite the recovered customer.
+		await restoreActiveCartRecovery(shiftStore.profileName);
+		verifyActiveCartRecoveryAfterInit(shiftStore.profileName);
 
 		_initializedKey = `${shiftStore.profileName}::${shiftStore.currentShift?.name}`;
 	}
@@ -2038,6 +2281,10 @@ async function handleShiftOpened() {
 	// Load tax rules (depends on settings being loaded)
 	await cartStore.loadTaxRules(shiftStore.profileName, posSettingsStore.settings);
 
+	// Restore an interrupted transaction after the new shift has completed initialization.
+	await restoreActiveCartRecovery(shiftStore.profileName);
+	verifyActiveCartRecoveryAfterInit(shiftStore.profileName);
+
 	_initializedProfile = shiftStore.profileName;
 
 	// Start session lock tracking now that a shift is open and POS is ready
@@ -2164,9 +2411,13 @@ function handleAdditionalDiscountUpdate(discountAmount) {
 	cartStore.rebuildIncrementalCache();
 }
 
-function handleCustomerSelected(selectedCustomer) {
+async function handleCustomerSelected(selectedCustomer) {
 	if (selectedCustomer) {
-		cartStore.setCustomer(selectedCustomer);
+		await cartStore.setCustomer(selectedCustomer);
+		await customerDisplayStore.refreshCustomerFinancials(selectedCustomer);
+		// Publish immediately after the async credit-balance lookup completes so the
+		// customer display does not wait for the next cart mutation.
+		customerDisplayStore.syncCartNow();
 		uiStore.showCustomerDialog = false;
 		showSuccess(__("{0} selected", [selectedCustomer.customer_name]));
 
@@ -2175,7 +2426,9 @@ function handleCustomerSelected(selectedCustomer) {
 			uiStore.showPaymentDialog = true;
 		}
 	} else {
-		cartStore.setCustomer(null);
+		await cartStore.setCustomer(null);
+		await customerDisplayStore.refreshCustomerFinancials(null);
+		customerDisplayStore.syncCartNow();
 	}
 }
 
@@ -2587,6 +2840,7 @@ async function startPaymentHubMappedSale(paymentData, customerValue, draftIdToDe
 		}
 
 		uiStore.showPaymentDialog = false;
+		discardActiveCartRecovery();
 		cartStore.clearCart();
 		previousCartHash = "";
 		resetPaymentHubCartReference();
@@ -2732,6 +2986,7 @@ async function startPaymentHubElectronicSale(paymentData, customerValue, draftId
 	const result = unwrapPaymentHubResult(callResult);
 
 	uiStore.showPaymentDialog = false;
+	discardActiveCartRecovery();
 	cartStore.clearCart();
 	previousCartHash = "";
 	resetPaymentHubCartReference();
@@ -2829,6 +3084,7 @@ async function startPaymentHubTerminalSale(paymentData, customerValue, draftIdTo
 	const result = unwrapPaymentHubResult(callResult);
 
 	uiStore.showPaymentDialog = false;
+	discardActiveCartRecovery();
 	cartStore.clearCart();
 	previousCartHash = "";
 	resetPaymentHubCartReference();
@@ -2866,6 +3122,10 @@ async function handlePaymentHubCompleted(result) {
 	await handlePrintInvoice({ name: invoice.name });
 }
 
+function handleCustomerDisplayPaymentUpdated(paymentData) {
+	customerDisplayStore.setPayment(paymentData);
+}
+
 async function handlePaymentCompleted(paymentData) {
 	try {
 		const customerValue = cartStore.customer?.name || cartStore.customer;
@@ -2875,6 +3135,8 @@ async function handlePaymentCompleted(paymentData) {
 			uiStore.showCustomerDialog = true;
 			return;
 		}
+
+		customerDisplayStore.setPayment(paymentData);
 
 		cartStore.payments = [];
 		if (paymentData.payments && Array.isArray(paymentData.payments)) {
@@ -3001,7 +3263,9 @@ async function handlePaymentCompleted(paymentData) {
 			};
 			uiStore.setLastOfflinePrintDoc(offlinePrintDoc);
 			cacheOfflineReceiptPayload(offlineReceiptName, offlinePrintDoc);
+			customerDisplayStore.showCompleted({ invoice: offlinePrintDoc, payment: paymentData });
 			uiStore.showPaymentDialog = false;
+			discardActiveCartRecovery();
 			cartStore.clearCart();
 			// Reset cart hash after successful payment
 			previousCartHash = "";
@@ -3073,7 +3337,9 @@ async function handlePaymentCompleted(paymentData) {
 				const invoiceTotal = result.grand_total || result.total || 0;
 				const paidAmount = paymentData.paid_amount || invoiceTotal;
 
+				customerDisplayStore.showCompleted({ invoice: result, payment: paymentData });
 				uiStore.showPaymentDialog = false;
+				discardActiveCartRecovery();
 				cartStore.clearCart();
 				// Reset cart hash after successful payment
 				previousCartHash = "";
@@ -3144,6 +3410,16 @@ function handleClearCart() {
 }
 
 function confirmClearCart() {
+	// Confirmed clear is deliberate; do not restore this cart after refresh.
+	discardActiveCartRecovery();
+	// Sales Person allocations are saved separately by PaymentDialog. A manual
+	// Clear discards the entire unfinished sale, including those allocations.
+	try {
+		const profile = String(shiftStore.profileName || "default");
+		sessionStorage.removeItem(`posnext_payment_sales_person_recovery_v1:${profile}`);
+	} catch (error) {
+		log.warn("Could not discard Sales Person recovery:", error);
+	}
 	cartStore.clearCart();
 	// Reset cart hash when cart is cleared
 	previousCartHash = "";
@@ -3321,6 +3597,7 @@ async function handleRetailReturnMode(mode) {
 
 async function handleExchangeReady(exchange) {
 	try {
+		customerDisplayStore.setTransactionMode("EXCHANGE");
 		if (
 			!exchange?.customer ||
 			!exchange?.return_invoice ||
@@ -3331,6 +3608,7 @@ async function handleExchangeReady(exchange) {
 			return;
 		}
 
+		discardActiveCartRecovery();
 		cartStore.clearCart();
 
 		// Keep the FULL return customer selected for the replacement sale. Payment
@@ -3403,6 +3681,7 @@ async function handleExchangeReady(exchange) {
 		);
 	} catch (error) {
 		console.error("Failed to prepare exchange checkout:", error);
+		discardActiveCartRecovery();
 		cartStore.clearCart();
 		autoApplyExchangeCredit.value = false;
 		exchangeCreditOrigin.value = "";
@@ -3450,6 +3729,7 @@ async function handleSaveDraft() {
 		cartStore.currentDraftId
 	);
 	if (savedDraft) {
+		discardActiveCartRecovery();
 		cartStore.clearCart();
 		// Reset cart hash when cart is saved as draft and cleared
 		previousCartHash = "";
@@ -3567,6 +3847,7 @@ async function handleReturnCreated(returnInvoice) {
 	}
 
 	log.debug("Return invoice created:", invoiceName);
+	customerDisplayStore.showCompleted({ invoice: returnInvoice, mode: "RETURN" });
 	await handleAutomaticCashDrawer(invoiceName);
 	const returnPrintFormat =
 		posSettingsStore.returnInvoicePrintFormat || shiftStore.currentProfile?.print_format || null;
@@ -3769,6 +4050,7 @@ async function handleEditOfflineInvoice(invoice) {
 			return;
 		}
 
+		discardActiveCartRecovery();
 		cartStore.clearCart();
 
 		const invoiceData = invoice.data;
@@ -4157,6 +4439,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+	customerDisplayStore.stop();
 	if (paymentHubPollTimer) {
 		window.clearInterval(paymentHubPollTimer);
 		paymentHubPollTimer = null;
