@@ -452,6 +452,7 @@
 								@show-return="openReturnDialog"
 								@close-shift="handleCloseShift()"
 								@show-shift-history="navigateToShiftHistory"
+								@focus-item-search="focusItemSearchAfterDialogClose"
 							/>
 						</div>
 					</keep-alive>
@@ -575,6 +576,7 @@
 				:payment-hub-config="paymentHubConfig"
 				@counts-updated="handlePaymentHubCountsUpdated"
 				@completed="handlePaymentHubCompleted"
+                            @update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Customer Selection Dialog -->
@@ -582,12 +584,14 @@
 				v-model="uiStore.showCustomerDialog"
 				:pos-profile="shiftStore.profileName"
 				@customer-selected="handleCustomerSelected"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Shift Opening Dialog -->
 			<ShiftOpeningDialog
 				v-model="uiStore.showOpenShiftDialog"
 				@shift-opened="handleShiftOpened"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Shift Closing Dialog -->
@@ -595,6 +599,7 @@
 				v-model="uiStore.showCloseShiftDialog"
 				:opening-shift="shiftStore.currentShift?.name"
 				@shift-closed="handleShiftClosed"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Draft Invoices Dialog -->
@@ -604,6 +609,7 @@
 				:allow-print-draft-invoices="posSettingsStore.allowPrintDraftInvoices"
 				@load-draft="handleLoadDraft"
 				@drafts-updated="draftsStore.updateDraftsCount"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Return Invoice Dialog -->
@@ -613,6 +619,7 @@
 				:pos-opening-shift="shiftStore.currentShift?.name"
 				:currency="shiftStore.profileCurrency"
 				@return-created="handleReturnCreated"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<RetailReturnExchangeMenu
@@ -620,6 +627,7 @@
 				:allow-without-invoice="posSettingsStore.allowReturnWithoutInvoice"
 				:allow-exchange="posSettingsStore.allowExchange"
 				@select="handleRetailReturnMode"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<NoInvoiceReturnDialog
@@ -629,6 +637,7 @@
 				:currency="shiftStore.profileCurrency"
 				:customer="cartStore.customer"
 				@return-created="handleReturnCreated"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<ExchangeDialog
@@ -640,6 +649,7 @@
 				:allow-without-invoice="posSettingsStore.allowReturnWithoutInvoice"
 				@exchange-ready="handleExchangeReady"
 				@return-created="handleReturnCreated"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Coupon Dialog -->
@@ -709,6 +719,7 @@
 				@view-invoice="handleViewInvoice"
 				@print-invoice="handlePrintInvoice"
 				@return-created="handleReturnCreated"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Shift History Dialog -->
@@ -716,6 +727,7 @@
 				v-model="showShiftHistoryDialog"
 				:pos-profile="shiftStore.profileName"
 				:currency="shiftStore.profileCurrency"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Offline Invoices Dialog -->
@@ -740,6 +752,7 @@
 				:customer="editCustomer"
 				@customer-created="handleCustomerCreated"
 				@customer-updated="handleCustomerUpdated"
+				@update:modelValue="handleQuickActionDialogVisibility"
 			/>
 
 			<!-- Promotion Management -->
@@ -2411,6 +2424,57 @@ function handleAdditionalDiscountUpdate(discountAmount) {
 	cartStore.rebuildIncrementalCache();
 }
 
+// Restore scanner readiness after a quick-action/dialog closes.
+// frappe-ui restores focus to the element that opened a Dialog after its close
+// transition. Focusing too early makes the barcode cursor appear briefly and
+// then disappear again. Wait for that restoration to finish, then focus the
+// main item/barcode input. A second guarded pass handles slower transitions.
+function focusItemSearchAfterDialogClose(attempt = 0) {
+	const delay = attempt === 0 ? 350 : 250;
+
+	setTimeout(() => {
+		if (!shiftStore.hasOpenShift) return;
+		if (!uiStore.isDesktop && uiStore.mobileActiveTab !== "items") return;
+
+		const anotherDialogOpen =
+			uiStore.showPaymentDialog ||
+			uiStore.isAnyDialogOpen ||
+			showRetailReturnMenu.value ||
+			showNoInvoiceReturnDialog.value ||
+			showExchangeDialog.value ||
+			showShiftHistoryDialog.value;
+
+		if (anotherDialogOpen) {
+			if (attempt < 4) focusItemSearchAfterDialogClose(attempt + 1);
+			return;
+		}
+
+		itemsSelectorRef.value?.focusSearchInput?.();
+
+		if (attempt === 0) {
+			setTimeout(() => {
+				if (
+					shiftStore.hasOpenShift &&
+					!uiStore.showPaymentDialog &&
+					!uiStore.isAnyDialogOpen &&
+					!showRetailReturnMenu.value &&
+					!showNoInvoiceReturnDialog.value &&
+					!showExchangeDialog.value &&
+					!showShiftHistoryDialog.value
+				) {
+					itemsSelectorRef.value?.focusSearchInput?.();
+				}
+			}, 350);
+		}
+	}, delay);
+}
+
+function handleQuickActionDialogVisibility(visible) {
+	if (!visible) {
+		focusItemSearchAfterDialogClose();
+	}
+}
+
 async function handleCustomerSelected(selectedCustomer) {
 	if (selectedCustomer) {
 		await cartStore.setCustomer(selectedCustomer);
@@ -2424,6 +2488,15 @@ async function handleCustomerSelected(selectedCustomer) {
 		if (pendingPaymentAfterCustomer.value) {
 			pendingPaymentAfterCustomer.value = false;
 			uiStore.showPaymentDialog = true;
+		} else {
+			// Customer may have been selected with Enter from the customer search.
+			// Delay focus until that key event has fully finished, then return focus
+			// to the main item/barcode scan input.
+			setTimeout(() => {
+				if (!uiStore.showPaymentDialog && !uiStore.isAnyDialogOpen) {
+					itemsSelectorRef.value?.focusSearchInput?.();
+				}
+			}, 0);
 		}
 	} else {
 		await cartStore.setCustomer(null);

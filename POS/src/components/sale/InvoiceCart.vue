@@ -1921,6 +1921,7 @@ const emit = defineEmits([
 	"close-shift", // () - Close current shift
 	"show-shift-history", // () - Open shift history dialog
 	// "create-sales-order", // () - Create Sales Order // Removed as per instruction
+	"focus-item-search", // Restore main barcode focus after local dialog closes
 ]);
 
 // Cart sort composable (must be after defineProps)
@@ -1967,6 +1968,16 @@ const cartSortContainer = ref(null);
 const showCashDrawerDialog = ref(false);
 const cashDrawerSubmitting = ref(false);
 const showCashDrawerSetupDialog = ref(false);
+
+// Cash drawer dialogs live inside InvoiceCart. Notify POSSale when they close
+// so the main item/barcode field becomes scanner-ready again.
+watch(showCashDrawerDialog, (visible, wasVisible) => {
+	if (wasVisible && !visible) emit("focus-item-search");
+});
+
+watch(showCashDrawerSetupDialog, (visible, wasVisible) => {
+	if (wasVisible && !visible) emit("focus-item-search");
+});
 const cashDrawerSetupSubmitting = ref(false);
 const cashDrawerSetupUnlocked = ref(false);
 const cashDrawerSetupPin = ref("");
