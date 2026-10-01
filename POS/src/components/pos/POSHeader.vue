@@ -1,8 +1,8 @@
 <template>
 	<div class="bg-white shadow-sm sticky top-0 z-[200]">
 		<div class="flex py-2 sm:py-3">
-			<!-- POS Icon - Aligned with Management Sidebar (64px) -->
-			<div class="w-16 flex-shrink-0 flex items-center justify-center">
+			<!-- POS Icon - Aligned with Management Sidebar (40px) -->
+			<div class="w-10 flex-shrink-0 flex items-center justify-center">
 				<button
 					class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-md flex-shrink-0 hover:from-blue-600 hover:to-blue-700 active:scale-95 transition-all"
 					:aria-label="'POS Next'"
