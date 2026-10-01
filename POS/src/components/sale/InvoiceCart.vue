@@ -1272,7 +1272,7 @@
 									<h4
 										class="text-xs sm:text-sm font-extrabold text-gray-900 truncate leading-tight"
 									>
-										{{ item.item_name }}
+										{{ item.barcode || item.item_code }} - {{ item.item_name }} <!-- POSNEXT_CART_BARCODE_BEFORE_NAME -->
 									</h4>
 									<!-- Free Item Badge -->
 									<span
