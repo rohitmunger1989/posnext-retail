@@ -1357,17 +1357,29 @@ def update_invoice(data):
 				invoice_doc.paid_amount = flt(sum(p.amount for p in invoice_doc.payments))
 				invoice_doc.base_paid_amount = flt(sum(p.base_amount or 0 for p in invoice_doc.payments))
 
-		# Validate and track POS Coupon if coupon_code is provided
+		# Support both POSNext custom POS Coupon and ERPNext standard Coupon Code
 		coupon_code = data.get("coupon_code")
 		if coupon_code:
-			# Validate POS Coupon exists and is valid
+			pos_coupon_name = None
 			if frappe.db.table_exists("POS Coupon"):
+				pos_coupon_name = (
+					frappe.db.get_value("POS Coupon", {"coupon_code": coupon_code, "company": invoice_doc.company}, "name")
+					or frappe.db.get_value("POS Coupon", {"coupon_code": coupon_code}, "name")
+				)
+
+			erp_coupon_name = None
+			if frappe.db.table_exists("Coupon Code"):
+				erp_coupon_name = (
+					frappe.db.get_value("Coupon Code", {"coupon_code": coupon_code}, "name")
+					or frappe.db.exists("Coupon Code", coupon_code)
+				)
+
+			if pos_coupon_name:
 				from pos_next.pos_next.doctype.pos_coupon.pos_coupon import check_coupon_code
 
 				coupon_result = check_coupon_code(
 					coupon_code, customer=invoice_doc.customer, company=invoice_doc.company
 				)
-
 				if not coupon_result or not coupon_result.get("valid"):
 					error_msg = (
 						coupon_result.get("msg", "Invalid coupon code")
@@ -1376,8 +1388,28 @@ def update_invoice(data):
 					)
 					frappe.throw(_(error_msg))
 
-				# Store coupon code on invoice for tracking
-				invoice_doc.coupon_code = coupon_code
+				# POSNext custom coupon is not an ERPNext Coupon Code Link.
+				invoice_doc.coupon_code = None
+			elif erp_coupon_name:
+				# ERPNext Coupon Code is normalized into POSNext's cart-level discount.
+				# Do not populate Sales Invoice.coupon_code or ERPNext would apply
+				# the linked Pricing Rule again and double-discount the invoice.
+				invoice_doc.coupon_code = None
+			else:
+				frappe.throw(_("Invalid coupon code"))
+
+		if coupon_code:
+			from pos_next.api.coupon_audit import set_coupon_audit_from_code
+
+			set_coupon_audit_from_code(
+				invoice_doc,
+				coupon_code,
+				flt(data.get("discount_amount") or invoice_doc.get("discount_amount") or 0),
+			)
+		else:
+			from pos_next.api.coupon_audit import clear_coupon_audit
+
+			clear_coupon_audit(invoice_doc)
 
 		# Validate stock availability before saving draft
 		# is_stock_item may not be set on unsaved doc items (frontend doesn't send it),
@@ -1772,20 +1804,8 @@ def submit_invoice(invoice=None, data=None):
 						},
 					)
 
-		# Handle POS Coupon if coupon_code is provided
-		coupon_code = invoice.get("coupon_code") or data.get("coupon_code")
-		if coupon_code:
-			# Increment usage counter for POS Coupon
-			if frappe.db.table_exists("POS Coupon"):
-				try:
-					from pos_next.pos_next.doctype.pos_coupon.pos_coupon import increment_coupon_usage
-
-					increment_coupon_usage(coupon_code)
-				except Exception as e:
-					frappe.log_error(
-						title="Failed to increment coupon usage",
-						message=f"Coupon: {coupon_code}, Error: {e!s}",
-					)
+		# Coupon usage is handled by the Sales Invoice on_submit hook.
+		# This keeps usage transactional and prevents double counting.
 
 		# Final server-side safety: do not trust a browser-supplied/item-default
 		# warehouse on any POS return, and never submit stale loyalty links while
@@ -3303,7 +3323,9 @@ def _evaluate_transaction_offers(
 			"transaction_date": posting_date,
 			"posting_date": posting_date,
 			"pos_profile": invoice.get("pos_profile"),
-			"coupon_code": invoice.get("coupon_code") or None,
+			# Coupon discounts are already normalized/applied by POSNext.
+			# Keep ERPNext coupon link empty here to avoid a second pricing-rule application.
+			"coupon_code": None,
 		}
 	)
 	doc.flags.ignore_mandatory = True

@@ -122,20 +122,23 @@ def _get_customer_coupon_usage_count(customer, coupon_code):
 			continue
 
 		meta = frappe.get_meta(doctype)
-		if not meta.has_field("coupon_code"):
+		if meta.has_field("posnext_coupon_code"):
+			coupon_field = "posnext_coupon_code"
+		elif meta.has_field("coupon_code"):
+			coupon_field = "coupon_code"
+		else:
 			continue
 
 		used_count += frappe.db.count(
 			doctype,
 			filters={
 				"customer": customer,
-				"coupon_code": coupon_code,
+				coupon_field: coupon_code,
 				"docstatus": 1,
 			},
 		)
 
 	return used_count
-
 
 def apply_coupon_discount(coupon, cart_total, net_total=None):
 	"""Calculate discount amount based on coupon configuration"""

@@ -602,46 +602,148 @@ def get_active_coupons(customer: str, company: str) -> list[dict]:
 
 
 @frappe.whitelist()
-def validate_coupon(coupon_code: str, company: str, customer: str | None = None) -> dict:
-	"""Validate a coupon code and return its details"""
-	if not frappe.db.table_exists("POS Coupon"):
-		return {"valid": False, "message": _("Coupons are not enabled")}
+def validate_coupon(
+        coupon_code: str,
+        company: str,
+        customer: str | None = None,
+        grand_total: float | None = None,
+        subtotal: float | None = None,
+) -> dict:
+        """Validate POSNext POS Coupon or ERPNext standard Coupon Code."""
+        if not customer:
+                return {"valid": False, "message": _("Please choose a customer")}
 
-	if not customer:
-		return {"valid": False, "message": _("Please choose a customer")}
+        coupon_code = (coupon_code or "").strip()
+        if not coupon_code:
+                return {"valid": False, "message": _("Please enter a coupon code")}
 
-	date = getdate()
+        date = getdate()
 
-	# Fetch coupon with case-insensitive code matching
-	# Note: coupon_code field is unique, so we can fetch directly
-	coupon = frappe.db.get_value(
-		"POS Coupon", {"coupon_code": coupon_code, "company": company}, ["*"], as_dict=1
-	)
+        # POSNext custom coupon takes priority.
+        coupon = None
+        if frappe.db.table_exists("POS Coupon"):
+                coupon = frappe.db.get_value(
+                        "POS Coupon",
+                        {"coupon_code": coupon_code, "company": company},
+                        ["*"],
+                        as_dict=1,
+                )
 
-	if not coupon:
-		return {"valid": False, "message": _("Invalid coupon code")}
+        if coupon:
+                if coupon.disabled:
+                        return {"valid": False, "message": _("This coupon is disabled")}
 
-	if coupon.disabled:
-		return {"valid": False, "message": _("This coupon is disabled")}
+                if coupon.coupon_type == "Gift Card":
+                        if coupon.used:
+                                return {"valid": False, "message": _("This gift card has already been used")}
+                elif coupon.maximum_use > 0 and coupon.used >= coupon.maximum_use:
+                        return {"valid": False, "message": _("This coupon has reached its usage limit")}
 
-	# Check usage limits
-	if coupon.coupon_type == "Gift Card":
-		if coupon.used:
-			return {"valid": False, "message": _("This gift card has already been used")}
-	else:
-		# Promotional coupons
-		if coupon.maximum_use > 0 and coupon.used >= coupon.maximum_use:
-			return {"valid": False, "message": _("This coupon has reached its usage limit")}
+                if coupon.valid_from and coupon.valid_from > date:
+                        return {"valid": False, "message": _("This coupon is not yet valid")}
+                if coupon.valid_upto and coupon.valid_upto < date:
+                        return {"valid": False, "message": _("This coupon has expired")}
+                if coupon.customer and coupon.customer != customer:
+                        return {"valid": False, "message": _("This coupon is not valid for this customer")}
 
-	# Check validity dates
-	if coupon.valid_from and coupon.valid_from > date:
-		return {"valid": False, "message": _("This coupon is not yet valid")}
+                coupon["coupon_source"] = "POS Coupon"
+                return {"valid": True, "coupon": coupon}
 
-	if coupon.valid_upto and coupon.valid_upto < date:
-		return {"valid": False, "message": _("This coupon has expired")}
+        # ERPNext standard Coupon Code
+        if not frappe.db.table_exists("Coupon Code"):
+                return {"valid": False, "message": _("Invalid coupon code")}
 
-	# Check customer restriction
-	if coupon.customer and coupon.customer != customer:
-		return {"valid": False, "message": _("This coupon is not valid for this customer")}
+        erp_coupon = frappe.db.get_value(
+                "Coupon Code",
+                {"coupon_code": coupon_code},
+                ["*"],
+                as_dict=1,
+        )
+        if not erp_coupon:
+                erp_coupon = frappe.db.get_value(
+                        "Coupon Code",
+                        coupon_code,
+                        ["*"],
+                        as_dict=1,
+                )
 
-	return {"valid": True, "coupon": coupon}
+        if not erp_coupon:
+                return {"valid": False, "message": _("Invalid coupon code")}
+
+        if erp_coupon.valid_from and erp_coupon.valid_from > date:
+                return {"valid": False, "message": _("This coupon is not yet valid")}
+        if erp_coupon.valid_upto and erp_coupon.valid_upto < date:
+                return {"valid": False, "message": _("This coupon has expired")}
+        if erp_coupon.customer and erp_coupon.customer != customer:
+                return {"valid": False, "message": _("This coupon is not valid for this customer")}
+        if erp_coupon.maximum_use and erp_coupon.used >= erp_coupon.maximum_use:
+                return {"valid": False, "message": _("This coupon has reached its usage limit")}
+        if not erp_coupon.pricing_rule:
+                return {"valid": False, "message": _("This coupon has no Pricing Rule")}
+
+        rule = frappe.get_doc("Pricing Rule", erp_coupon.pricing_rule)
+
+        if rule.get("disable"):
+                return {"valid": False, "message": _("The Pricing Rule for this coupon is disabled")}
+        if rule.get("valid_from") and rule.valid_from > date:
+                return {"valid": False, "message": _("This coupon is not yet valid")}
+        if rule.get("valid_upto") and rule.valid_upto < date:
+                return {"valid": False, "message": _("This coupon has expired")}
+
+        if rule.get("apply_on") != "Transaction":
+                return {"valid": False, "message": _("This ERPNext coupon must use a Transaction Pricing Rule in POS")}
+
+        if rule.get("price_or_product_discount") and rule.price_or_product_discount != "Price":
+                return {"valid": False, "message": _("Product/free-item coupon rules are not supported in the POS coupon dialog")}
+
+        rate_or_discount = rule.get("rate_or_discount")
+        if rate_or_discount == "Discount Percentage":
+                discount_type = "Percentage"
+                discount_percentage = rule.get("discount_percentage") or 0
+                discount_amount = 0
+        elif rate_or_discount == "Discount Amount":
+                discount_type = "Amount"
+                discount_percentage = 0
+                discount_amount = rule.get("discount_amount") or 0
+        else:
+                return {"valid": False, "message": _("This ERPNext coupon must use Discount Percentage or Discount Amount")}
+
+        apply_discount_on = rule.get("apply_discount_on") or "Net Total"
+        base_amount = float(grand_total or 0) if apply_discount_on == "Grand Total" else float(subtotal or 0)
+
+        min_amt = float(rule.get("min_amt") or 0)
+        max_amt = float(rule.get("max_amt") or 0)
+
+        if min_amt and base_amount < min_amt:
+                return {
+                        "valid": False,
+                        "message": _("This coupon requires a minimum purchase of {0}").format(min_amt),
+                }
+
+        if max_amt and base_amount > max_amt:
+                return {
+                        "valid": False,
+                        "message": _("This coupon is only valid up to a purchase amount of {0}").format(max_amt),
+                }
+
+        normalized = {
+                "name": erp_coupon.name,
+                "coupon_name": erp_coupon.name,
+                "coupon_code": erp_coupon.coupon_code,
+                "coupon_type": erp_coupon.coupon_type,
+                "customer": erp_coupon.customer,
+                "valid_from": erp_coupon.valid_from,
+                "valid_upto": erp_coupon.valid_upto,
+                "maximum_use": erp_coupon.maximum_use,
+                "used": erp_coupon.used,
+                "pricing_rule": erp_coupon.pricing_rule,
+                "coupon_source": "ERPNext Coupon Code",
+                "discount_type": discount_type,
+                "discount_percentage": discount_percentage,
+                "discount_amount": discount_amount,
+                "min_amount": min_amt,
+                "max_amount": 0,
+                "apply_on": "Grand Total" if apply_discount_on == "Grand Total" else "Net Total",
+        }
+
+        return {"valid": True, "coupon": normalized}

@@ -302,6 +302,8 @@ const couponResource = createResource({
 			coupon_code: couponCode.value,
 			customer: props.customer,
 			company: props.company,
+			grand_total: props.grandTotal,
+			subtotal: props.subtotal,
 		};
 	},
 	auto: false,

@@ -163,11 +163,13 @@ doc_events = {
 			"pos_next.realtime_events.emit_stock_update_event",
 			"pos_next.api.wallet.process_loyalty_to_wallet",
 			"pos_next.api.sales_invoice_hooks.record_one_time_offer_usage",
+			"pos_next.api.coupon_audit.record_coupon_usage",
 			"pos_next.api.credit_sales.apply_pending_payment_hub_credit",
 		],
 		"on_cancel": [
 			"pos_next.realtime_events.emit_stock_update_event",
 			"pos_next.api.sales_invoice_hooks.release_one_time_offer_usage",
+			"pos_next.api.coupon_audit.release_coupon_usage",
 		],
 		"after_insert": "pos_next.realtime_events.emit_invoice_created_event",
 	},
