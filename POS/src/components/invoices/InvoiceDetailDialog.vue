@@ -603,7 +603,11 @@ const isCreditSale = computed(() => {
 	const grandTotal = Math.abs(invoiceData.value.grand_total || 0);
 	const outstanding = Math.abs(invoiceData.value.outstanding_amount || 0);
 	// Credit sale if no payments and outstanding equals grand total
-	return hasNoPayments || (totalPaid < 0.01 && Math.abs(outstanding - grandTotal) < 0.01);
+	return (
+		grandTotal > 0.009 &&
+		outstanding > 0.009 &&
+		(hasNoPayments || (totalPaid < 0.01 && Math.abs(outstanding - grandTotal) < 0.01))
+	);
 });
 
 // Computed: Check if this return was added to customer credit (no payments, negative outstanding)

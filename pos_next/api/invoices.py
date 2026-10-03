@@ -1061,6 +1061,55 @@ def _restore_customer_credit_tender_audit(invoice_doc, gross_payments, change_am
 	invoice_doc.reload()
 
 
+def _validate_pos_sale_item_rates(invoice_doc):
+	"""Block unintended zero-price items on normal POS sales.
+
+	Zero-value invoices caused by coupons, gift cards, offers or document-level
+	discounts are valid because their sale items still have real selling rates.
+
+	Explicit promotion/free items are also valid when is_free_item is set.
+
+	Returns are excluded because a fully discounted original sale may legitimately
+	produce a zero-value return item.
+	"""
+	if not invoice_doc:
+		return
+
+	if invoice_doc.doctype != "Sales Invoice":
+		return
+
+	if cint(invoice_doc.get("is_return")):
+		return
+
+	if not cint(invoice_doc.get("is_pos")):
+		return
+
+	invalid_items = []
+
+	for row in invoice_doc.get("items", []):
+		if cint(row.get("is_free_item")):
+			continue
+
+		qty = abs(flt(row.get("qty") or 0))
+		if qty <= 0:
+			continue
+
+		rate = flt(row.get("rate") or 0)
+
+		if rate <= 0:
+			invalid_items.append(
+				row.get("item_name") or row.get("item_code") or _("Unknown Item")
+			)
+
+	if invalid_items:
+		frappe.throw(
+			_(
+				"Cannot complete sale. The following item(s) have a selling price of zero: {0}. "
+				"Set a valid selling price or use an approved promotion/free-item rule."
+			).format(", ".join(invalid_items))
+		)
+
+
 # ==========================================
 # Invoice Management (Two-Step Flow)
 # ==========================================
@@ -1410,6 +1459,10 @@ def update_invoice(data):
 			from pos_next.api.coupon_audit import clear_coupon_audit
 
 			clear_coupon_audit(invoice_doc)
+
+		# Prevent unintended free sales. Coupon/gift-card zero totals remain valid
+		# because their item selling rates are still greater than zero.
+		_validate_pos_sale_item_rates(invoice_doc)
 
 		# Validate stock availability before saving draft
 		# is_stock_item may not be set on unsaved doc items (frontend doesn't send it),
@@ -1846,6 +1899,10 @@ def submit_invoice(invoice=None, data=None):
 						f"Failed to apply write-off from POS Profile {pos_profile}: {e}",
 						"POS Write-Off Error",
 					)
+
+		# Re-check at final submit so a modified/tampered draft cannot bypass
+		# the normal POS selling-price validation.
+		_validate_pos_sale_item_rates(invoice_doc)
 
 		# Validate stock availability before submission
 		# _validate_stock_on_invoice checks _should_block internally
@@ -3000,7 +3057,11 @@ def prepare_return_invoice(invoice_name, pos_opening_shift=None):
 
 		# Get rate breakdown for display
 		price_list_rate = flt(item.get("price_list_rate") or item.get("rate"), precision)
-		net_rate = flt(item.get("net_rate") or item.get("rate"), precision)
+		raw_net_rate = item.get("net_rate")
+		net_rate = flt(
+			item.get("rate") if raw_net_rate is None else raw_net_rate,
+			precision,
+		)
 		tax_per_unit = (
 			flt(item_tax_map.get(item.get("item_code"), 0) / original_qty, precision) if original_qty else 0
 		)

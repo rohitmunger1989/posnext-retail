@@ -575,7 +575,7 @@
 									<p class="text-sm font-bold text-gray-900">
 										{{
 											formatCurrency(
-												(item.rate_with_tax || item.rate) * item.return_qty
+												(item.rate_with_tax ?? item.rate) * item.return_qty
 											)
 										}}
 									</p>
@@ -698,7 +698,7 @@
 										<p class="text-base font-bold text-gray-900">
 											{{
 												formatCurrency(
-													(item.rate_with_tax || item.rate) *
+													(item.rate_with_tax ?? item.rate) *
 														item.return_qty
 												)
 											}}
@@ -1653,6 +1653,16 @@ const fetchInvoiceResource = createResource({
 			isOriginalCreditSale.value =
 				hasNoPayments || (totalPaidFromPayments < 0.01 && isFullyUnpaid);
 
+			// POSNEXT_ZERO_TOTAL_NOT_CREDIT
+			// No payment rows do not mean Pay on Account when the invoice
+			// was fully settled by coupon/gift-card/additional discount.
+			if (
+				Math.abs(Number(origInvoice.grand_total || 0)) < 0.01 &&
+				Math.abs(Number(origInvoice.outstanding_amount || 0)) < 0.01
+			) {
+				isOriginalCreditSale.value = false;
+			}
+
 			// Detect partial payment: some amount paid but still has outstanding balance.
 			// Partial payments require proportional refund calculation.
 			isPartiallyPaid.value =
@@ -1898,7 +1908,7 @@ const returnTotal = computed(() =>
 	roundCurrency(
 		selectedItems.value.reduce(
 			(sum, item) =>
-				sum + roundCurrency(item.return_qty * (item.rate_with_tax || item.rate)),
+				sum + roundCurrency(item.return_qty * (item.rate_with_tax ?? item.rate)),
 			0
 		)
 	)
@@ -1992,6 +2002,10 @@ const canCreateReturn = computed(() => {
 	}
 	if (addToCustomerCredit.value) return true;
 
+	// Fully discounted coupon/gift-card sale:
+	// stock may be returned but there is no monetary refund.
+	if (Math.abs(returnTotal.value) < 0.01) return true;
+
 	const payments = refundPayments.value;
 	if (paymentHubManaged.value) {
 		const active = payments.filter((payment) => Number(payment.amount || 0) > 0);
@@ -2084,6 +2098,12 @@ watch(normalizedSearchTerm, (searchTerm) => {
 // Auto-populate payment amount when return total changes (single payment only)
 watch(returnTotal, (newTotal) => {
 	if (isExchangeCreditMode.value) return;
+
+	// POSNEXT_ZERO_RETURN_NO_PAYMENT
+	if (Math.abs(Number(newTotal || 0)) < 0.01) {
+		refundPayments.value = [];
+		return;
+	}
 	if (!returnModal.visible || !showDialog.value || isOriginalCreditSale.value) return;
 	if (paymentHubManaged.value) {
 		applyPaymentHubRefundAmounts();

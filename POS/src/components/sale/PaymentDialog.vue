@@ -3037,6 +3037,17 @@ const canComplete = computed(() => {
 		return false;
 	}
 
+	// A coupon, gift card, offer, or other valid discount may reduce the invoice
+	// to exactly zero. A zero-value invoice is already fully settled and must not
+	// require a fake Cash/K-Net payment row.
+	if (
+		roundCurrency(props.grandTotal) === 0 &&
+		remainingAmount.value === 0 &&
+		totalPaid.value === 0
+	) {
+		return true;
+	}
+
 	// "Pay on Receivable Account": the chosen account holds the unpaid balance
 	if (selectedReceivableAccount.value && props.allowCreditSale) {
 		return totalPaid.value <= roundCurrency(props.grandTotal) + 0.01;
