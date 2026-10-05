@@ -441,6 +441,65 @@ def get_wallet_info(customer, company, pos_profile=None):
 
 
 @frappe.whitelist()
+def get_wallet_display_summary(customer, company, pos_profile=None, invoice=None):
+	"""Return customer-facing Loyalty Wallet values for Customer Display/receipt UI.
+
+	The live balance uses the same wallet balance calculation as the POS. When an
+	invoice is supplied, ``wallet_used`` is read from that invoice's wallet payment
+	rows and ``wallet_added`` is read from submitted Loyalty Credit Wallet
+	Transactions linked to that exact invoice.
+	"""
+	info = get_wallet_info(customer, company, pos_profile)
+	result = {
+		"wallet_enabled": cint(info.get("wallet_enabled")),
+		"wallet_exists": bool(info.get("wallet_exists")),
+		"loyalty_program": frappe.db.get_value("Customer", customer, "loyalty_program") or info.get("loyalty_program"),
+		"wallet_balance": flt(info.get("wallet_balance")),
+		"wallet_used": 0.0,
+		"wallet_added": 0.0,
+	}
+
+	if not invoice:
+		return result
+
+	invoice_doc = frappe.db.get_value(
+		"Sales Invoice",
+		invoice,
+		["name", "customer", "company"],
+		as_dict=True,
+	)
+	if not invoice_doc or invoice_doc.customer != customer or invoice_doc.company != company:
+		return result
+
+	payments = frappe.get_all(
+		"Sales Invoice Payment",
+		filters={"parent": invoice_doc.name, "parenttype": "Sales Invoice"},
+		fields=["mode_of_payment", "amount"],
+	)
+	for payment in payments:
+		if payment.mode_of_payment and cint(
+			frappe.db.get_value("Mode of Payment", payment.mode_of_payment, "is_wallet_payment")
+		):
+			result["wallet_used"] += abs(flt(payment.amount))
+
+	wallet_credits = frappe.get_all(
+		"Wallet Transaction",
+		filters={
+			"customer": customer,
+			"company": company,
+			"docstatus": 1,
+			"transaction_type": "Loyalty Credit",
+			"reference_doctype": "Sales Invoice",
+			"reference_name": invoice_doc.name,
+		},
+		fields=["amount"],
+	)
+	result["wallet_added"] = sum(abs(flt(row.amount)) for row in wallet_credits)
+
+	return result
+
+
+@frappe.whitelist()
 def create_manual_wallet_credit(customer, company, amount, remarks=None):
 	"""
 	Create a manual wallet credit (for admin use).

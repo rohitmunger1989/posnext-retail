@@ -89,6 +89,10 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	const paymentActive = ref(false);
 	const paymentCustomerCredit = ref(null);
 	const customerCreditBalance = ref(null);
+	const customerWalletBalance = ref(null);
+	const customerWalletProgram = ref("");
+	const customerWalletEnabled = ref(false);
+	const completedWalletAdded = ref(0);
 	const customerFinancialKey = ref("");
 	const transactionMode = ref("SALE");
 	const initialized = ref(false);
@@ -186,6 +190,8 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			total_discount: enabled(s.cd_show_total_discount, true),
 			grand_total: enabled(s.cd_show_grand_total, true),
 			customer_name: enabled(s.cd_show_customer_name, true),
+			// Keep the existing POS Settings switches for backward compatibility,
+			// but customer-facing loyalty values are now shown as Loyalty Wallet KD.
 			loyalty_points: enabled(s.cd_show_loyalty_points, true),
 			loyalty_earned: enabled(s.cd_show_loyalty_earned, true),
 			customer_credit: enabled(s.cd_show_customer_credit, true),
@@ -245,11 +251,17 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			name: v.customer_name
 				? customerDisplayName(customer, settingsStore.settings.cd_customer_name_mode)
 				: null,
-			loyalty_points: v.loyalty_points
-				? number(customer.loyalty_points ?? customer.available_loyalty_points ?? customer.points)
+			loyalty_program: v.loyalty_points && customerWalletEnabled.value
+				? (customerWalletProgram.value || customer.loyalty_program || null)
 				: null,
-			loyalty_earned: v.loyalty_earned
-				? number(customer.loyalty_points_earned ?? customer.points_earned)
+			wallet_balance: v.loyalty_points && customerWalletEnabled.value
+				? number(customerWalletBalance.value)
+				: null,
+			wallet_used: v.loyalty_points
+				? number(paymentSnapshot.value?.wallet_used)
+				: null,
+			wallet_added: v.loyalty_earned
+				? number(completedWalletAdded.value)
 				: null,
 			credit: v.customer_credit
 				? number(
@@ -272,33 +284,106 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		if (!key) {
 			customerFinancialKey.value = "";
 			customerCreditBalance.value = null;
+			customerWalletBalance.value = null;
+			customerWalletProgram.value = "";
+			customerWalletEnabled.value = false;
+			completedWalletAdded.value = 0;
 			paymentCustomerCredit.value = null;
 			syncCartNow();
 			return;
 		}
-		if (!visibility().customer_credit) return;
 		const company = shiftStore.profileCompany || shiftStore.currentProfile?.company || "";
 		if (!company) return;
 
 		const requestKey = `${company}::${key}`;
 		customerFinancialKey.value = requestKey;
-		try {
-			const result = await call("pos_next.api.credit_sales.get_customer_balance", {
-				customer: key,
-				company,
-			});
-			if (customerFinancialKey.value !== requestKey) return;
+		completedWalletAdded.value = 0;
+
+		const requests = [];
+		if (visibility().customer_credit) {
+			requests.push(
+				call("pos_next.api.credit_sales.get_customer_balance", { customer: key, company })
+					.then((result) => ({ type: "credit", result }))
+			);
+		}
+		if (visibility().loyalty_points || visibility().loyalty_earned) {
+			requests.push(
+				call("pos_next.api.wallet.get_wallet_info", {
+					customer: key,
+					company,
+					pos_profile: posProfile.value || cartStore.posProfile || "",
+				}).then((result) => ({ type: "wallet", result }))
+			);
+		}
+
+		const results = await Promise.allSettled(requests);
+		if (customerFinancialKey.value !== requestKey) return;
+
+		for (const entry of results) {
+			if (entry.status !== "fulfilled") continue;
+			const { type, result } = entry.value;
 			const data = result?.message || result || {};
-			customerCreditBalance.value = number(data.available_credit ?? data.total_credit ?? 0);
-			if (!paymentActive.value) paymentCustomerCredit.value = null;
-			// Customer selection is an important display event: publish immediately
-			// once the balance is available instead of waiting for another cart change.
-			syncCartNow();
-		} catch (_) {
-			if (customerFinancialKey.value === requestKey) {
-				customerCreditBalance.value = null;
-				syncCartNow();
+			if (type === "credit") {
+				customerCreditBalance.value = number(data.available_credit ?? data.total_credit ?? 0);
+				if (!paymentActive.value) paymentCustomerCredit.value = null;
+			} else if (type === "wallet") {
+				customerWalletEnabled.value = Boolean(number(data.wallet_enabled));
+				customerWalletBalance.value = number(data.wallet_balance);
+				customerWalletProgram.value = String(customer?.loyalty_program || data.loyalty_program || "");
 			}
+		}
+
+		// Customer selection is an important display event: publish immediately
+		// once balances are available instead of waiting for another cart change.
+		syncCartNow();
+	}
+
+	function walletUsedFromPayments(rows = []) {
+		return (rows || []).reduce((total, row) => {
+			const mode = String(row?.mode_of_payment || row?.type || "").trim().toLowerCase();
+			const isWallet = Boolean(row?.is_wallet_payment) || mode === "loyalty wallet" || mode.includes("loyalty wallet");
+			return isWallet ? total + Math.abs(number(row?.amount)) : total;
+		}, 0);
+	}
+
+	async function refreshCompletedWallet(invoiceName, customer, company) {
+		if (!invoiceName || !customer || !company) return;
+		try {
+			const result = await call("pos_next.api.wallet.get_wallet_display_summary", {
+				customer,
+				company,
+				pos_profile: posProfile.value || cartStore.posProfile || "",
+				invoice: invoiceName,
+			});
+			const data = result?.message || result || {};
+			if (state.value?.transaction?.invoice_number !== invoiceName) return;
+
+			customerWalletEnabled.value = Boolean(number(data.wallet_enabled));
+			customerWalletBalance.value = number(data.wallet_balance);
+			customerWalletProgram.value = String(data.loyalty_program || customerWalletProgram.value || "");
+			completedWalletAdded.value = number(data.wallet_added);
+			if (paymentSnapshot.value) {
+				paymentSnapshot.value = {
+					...paymentSnapshot.value,
+					wallet_used: number(data.wallet_used),
+					wallet_added: number(data.wallet_added),
+					wallet_balance: number(data.wallet_balance),
+					loyalty_program: data.loyalty_program || customerWalletProgram.value || null,
+				};
+			}
+
+			const refreshed = { ...state.value };
+			refreshed.customer = {
+				...(refreshed.customer || {}),
+				loyalty_program: data.loyalty_program || customerWalletProgram.value || null,
+				wallet_balance: number(data.wallet_balance),
+				wallet_used: number(data.wallet_used),
+				wallet_added: number(data.wallet_added),
+			};
+			refreshed.payment = paymentSnapshot.value;
+			publish(refreshed);
+		} catch (_) {
+			// Customer Display enrichment must never interfere with checkout.
 		}
 	}
 
@@ -379,6 +464,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			paymentSnapshot.value = null;
 			paymentActive.value = false;
 			paymentCustomerCredit.value = null;
+			completedWalletAdded.value = 0;
 			transactionMode.value = "SALE";
 		}
 
@@ -425,17 +511,23 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			paymentCustomerCredit.value = number(paymentData.customer_credit_balance);
 		}
 
+		const walletUsed = walletUsedFromPayments(paymentData?.payments || []);
 		paymentSnapshot.value = {
 			methods: v.payment_method
 				? (paymentData?.payments || []).map((row) => ({
 					mode_of_payment: row.mode_of_payment || row.type || "",
 					amount: number(row.amount),
+					is_wallet_payment: Boolean(row.is_wallet_payment),
 				}))
 				: [],
 			paid_amount: v.amount_paid ? paid : null,
 			remaining_balance: v.remaining_balance ? outstanding : null,
 			change_amount: v.change ? change : null,
 			customer_credit_balance: v.customer_credit ? paymentCustomerCredit.value : null,
+			wallet_used: v.loyalty_points ? walletUsed : null,
+			wallet_added: v.loyalty_earned ? number(completedWalletAdded.value) : null,
+			wallet_balance: v.loyalty_points && customerWalletEnabled.value ? number(customerWalletBalance.value) : null,
+			loyalty_program: v.loyalty_points && customerWalletEnabled.value ? (customerWalletProgram.value || null) : null,
 		};
 		const payload = buildCartPayload("PAYMENT");
 		if (payload.customer && v.customer_credit && paymentCustomerCredit.value !== null) {
@@ -473,6 +565,17 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			...(extra || {}),
 		};
 		publish(payload);
+
+		// Enrich the completed screen with actual server-side Wallet Used / Added / Balance.
+		// This is display-only and intentionally non-blocking so checkout, printing,
+		// recovery and cash-drawer behavior are untouched.
+		const completedInvoiceName = payload.transaction?.invoice_number || "";
+		const completedCustomer = customerKey();
+		const completedCompany = shiftStore.profileCompany || shiftStore.currentProfile?.company || "";
+		if (transactionType === "SALE" && completedInvoiceName && completedCustomer && completedCompany) {
+			refreshCompletedWallet(completedInvoiceName, completedCustomer, completedCompany);
+		}
+
 		const duration = payload.thank_you?.duration || 5;
 		completedHoldUntil = Date.now() + duration * 1000;
 		thankYouTimer = setTimeout(() => {
@@ -481,6 +584,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			paymentSnapshot.value = null;
 			paymentActive.value = false;
 			paymentCustomerCredit.value = null;
+			completedWalletAdded.value = 0;
 			transactionMode.value = "SALE";
 
 			// If the cashier has already started the next sale, show that cart instead
@@ -500,6 +604,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		paymentSnapshot.value = null;
 		paymentActive.value = false;
 		paymentCustomerCredit.value = null;
+		completedWalletAdded.value = 0;
 		transactionMode.value = "SALE";
 		if (isEnabled.value) publish(basePayload("IDLE"));
 	}
@@ -582,6 +687,10 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		stopCustomerFinancialWatch = null;
 		customerFinancialKey.value = "";
 		customerCreditBalance.value = null;
+		customerWalletBalance.value = null;
+		customerWalletProgram.value = "";
+		customerWalletEnabled.value = false;
+		completedWalletAdded.value = 0;
 		if (terminalChangeHandler) window.removeEventListener(PRINT_PROVIDER_CHANGED_EVENT, terminalChangeHandler);
 		terminalChangeHandler = null;
 		try { channel?.close(); } catch (_) {}

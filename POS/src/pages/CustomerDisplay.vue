@@ -79,6 +79,7 @@
 					<div v-if="visible('invoice_number') && displayState?.transaction?.invoice_number" class="invoice-number">
 						{{ displayState.transaction.invoice_number }}
 					</div>
+					<LoyaltyWalletSummary :state="displayState" :currency="currencyLabel" />
 					<PaymentSummary :state="displayState" :currency="currencyLabel" />
 				</section>
 
@@ -169,11 +170,17 @@
 							<div v-if="visible('customer_name') && displayState?.customer?.name">
 								<span>Customer</span><strong>{{ displayState.customer.name }}</strong>
 							</div>
-							<div v-if="visible('loyalty_points') && displayState?.customer?.loyalty_points !== null">
-								<span>Loyalty Points</span><strong>{{ displayState.customer.loyalty_points }}</strong>
+							<div v-if="visible('loyalty_points') && displayState?.customer?.loyalty_program">
+								<span>Loyalty Program</span><strong>{{ displayState.customer.loyalty_program }}</strong>
+							</div>
+							<div v-if="visible('loyalty_points') && displayState?.customer?.wallet_balance !== null">
+								<span>Loyalty Wallet Balance</span><strong>{{ money(displayState.customer.wallet_balance) }}</strong>
+							</div>
+							<div v-if="mode === 'PAYMENT' && visible('loyalty_points') && Number(displayState?.customer?.wallet_used || 0) > 0">
+								<span>Wallet Used</span><strong>{{ money(displayState.customer.wallet_used) }}</strong>
 							</div>
 							<div v-if="visible('customer_credit') && displayState?.customer?.credit !== null">
-								<span>Credit Balance</span><strong>{{ money(displayState.customer.credit) }}</strong>
+								<span>Customer Credit</span><strong>{{ money(displayState.customer.credit) }}</strong>
 							</div>
 						</div>
 
@@ -262,7 +269,7 @@ const overlayScrollingStyle = computed(() => ({ animationDuration: ({Slow:'35s',
 const showProductImage = computed(() => visible("product_image") && !!displayState.value?.current_item);
 const hasCustomerInfo = computed(() => {
 	const c = displayState.value?.customer;
-	return !!(c && (c.name || c.loyalty_points !== null || c.credit !== null));
+	return !!(c && (c.name || c.loyalty_program || c.wallet_balance !== null || c.credit !== null));
 });
 
 function visible(key) {
@@ -347,6 +354,33 @@ const CartSummary = defineComponent({
 			return h("div", { class: ["totals-card", props.compact ? "compact" : "summary-strip"] }, rows.map(([label, value, type]) =>
 				h("div", { class: ["summary-tile", type] }, [h("span", label), h("strong", String(value))])
 			));
+		};
+	},
+});
+
+const LoyaltyWalletSummary = defineComponent({
+	props: { state: Object, currency: String },
+	setup(props) {
+		const fmt = (v) => `${props.currency || ""} ${Number(v || 0).toFixed(3)}`.trim();
+		return () => {
+			const c = props.state?.customer || {};
+			const p = props.state?.payment || {};
+			const program = c.loyalty_program || p.loyalty_program || "";
+			const used = Number(c.wallet_used ?? p.wallet_used ?? 0);
+			const added = Number(c.wallet_added ?? p.wallet_added ?? 0);
+			const balance = c.wallet_balance ?? p.wallet_balance;
+			if (!program && used <= 0 && added <= 0 && (balance === null || balance === undefined)) return null;
+
+			const rows = [];
+			if (program) rows.push(["Loyalty Program", program]);
+			if (used > 0) rows.push(["Wallet Used", fmt(used)]);
+			if (added > 0) rows.push(["Wallet Added", fmt(added)]);
+			if (balance !== null && balance !== undefined) rows.push(["Wallet Balance", fmt(balance)]);
+
+			return h("div", { class: "loyalty-wallet-card" }, [
+				h("div", { class: "card-title" }, "Loyalty Wallet"),
+				...rows.map(([label, value]) => h("div", { class: "loyalty-wallet-row" }, [h("span", label), h("strong", value)])),
+			]);
 		};
 	},
 });
@@ -436,6 +470,7 @@ onUnmounted(() => {
 .sale-sidebar { min-height:0; overflow:auto; border-left:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.035); padding:22px; display:flex; flex-direction:column; gap:16px; }
 .current-item-card,.customer-card,.totals-card,.payment-card { border:1px solid rgba(255,255,255,.14); border-radius:18px; background:rgba(0,0,0,.14); }
 .current-item-card{padding:16px;display:grid;grid-template-columns:132px minmax(0,1fr);gap:16px;align-items:center}.current-item-image-wrap{width:132px;height:132px;border-radius:14px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center}.current-item-image{width:100%;height:100%;object-fit:contain}.image-placeholder.compact{color:#999;font-size:11px;font-weight:700}.current-item-copy{min-width:0}.current-item-copy h2{line-height:1.08;margin:5px 0 8px;letter-spacing:-.035em}.latest-item-name{white-space:normal;overflow:visible;text-overflow:clip;max-width:100%;display:block;overflow-wrap:anywhere;word-break:normal}.barcode.compact{font-size:12px;opacity:.5;margin-bottom:8px}.current-item-qty{font-size:15px;font-weight:800;margin-bottom:8px}.current-item-prices>div{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:13px}.current-item-prices span{opacity:.58}.current-item-prices .discount strong{color:#ff8a65}.current-item-prices .final{border-top:1px solid rgba(255,255,255,.1);margin-top:5px;padding-top:9px}.current-item-prices .final strong{font-size:19px}
+.loyalty-wallet-card{width:min(620px,82vw);text-align:left;border:1px solid rgba(255,255,255,.14);border-radius:18px;background:rgba(0,0,0,.14);padding:15px 17px;box-sizing:border-box}.loyalty-wallet-card>.card-title{margin-bottom:6px}.loyalty-wallet-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:7px 0;font-size:14px}.loyalty-wallet-row span{opacity:.62}.loyalty-wallet-row strong{white-space:nowrap}.theme-light .loyalty-wallet-card{border-color:#ddd;background:#fff}
 .customer-card{padding:15px 17px}.customer-card>div{display:flex;justify-content:space-between;gap:18px;padding:7px 0;font-size:14px}.customer-card span{opacity:.58}
 .totals-card.summary-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;background:transparent;border:0;padding:0}.summary-tile{min-width:0;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.045);border-radius:16px;padding:13px 16px;display:flex;flex-direction:column;gap:6px;box-shadow:0 8px 20px rgba(0,0,0,.08)}.summary-tile span{font-size:11px;opacity:.55;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}.summary-tile strong{font-size:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.summary-tile.grand{background:rgba(255,255,255,.09)}.summary-tile.grand strong{font-size:24px}.summary-tile.discount strong{color:#ff8a65}.totals-card.compact{padding:16px}.totals-card.compact .summary-tile{margin-bottom:8px}
 .payment-card-redesigned{padding:16px;box-shadow:0 12px 28px rgba(0,0,0,.12)}.payment-card-redesigned>.card-title{margin-bottom:10px}.payment-methods{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}.payment-method-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.045);font-size:14px}.payment-method-row span{opacity:.68}.payment-method-row strong{white-space:nowrap;font-size:16px}.payment-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.payment-tile{min-height:96px;border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;gap:7px;text-align:center;border:1px solid transparent;box-shadow:0 10px 24px rgba(0,0,0,.14),inset 0 1px 0 rgba(255,255,255,.18)}.payment-tile span{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;opacity:.76;white-space:nowrap}.payment-tile strong{font-size:24px;line-height:1.05;white-space:nowrap}.payment-tile.paid{background:linear-gradient(145deg,rgba(33,150,243,.24),rgba(33,150,243,.10));border-color:rgba(88,169,255,.42);color:#58a9ff}.payment-tile.change{background:linear-gradient(145deg,rgba(46,204,113,.24),rgba(46,204,113,.10));border-color:rgba(85,217,138,.42);color:#55d98a}.payment-tile.remaining{background:linear-gradient(145deg,rgba(255,159,67,.25),rgba(255,159,67,.10));border-color:rgba(255,177,95,.42);color:#ffb15f}.payment-tiles:has(.payment-tile:only-child){grid-template-columns:1fr}
