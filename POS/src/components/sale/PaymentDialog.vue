@@ -3,84 +3,16 @@
 		v-model="show"
 		:disable-outside-click-to-close="true"
 		:options="{
-			title: paymentDialogTitle,
+			title: isSalesOrder ? __('Complete Sales Order') : __('Complete Payment'),
 			size: dynamicDialogSize,
 		}"
 	>
 		<template #body-content>
-			<!-- Submitted cash sale with change: immutable cashier handoff screen. -->
-			<div
-				v-if="completedPaymentSummary"
-				class="pos-payment-dialog-marker pos-payment-dialog-completed py-2"
-			>
-				<div class="mx-auto max-w-2xl rounded-2xl border border-green-200 bg-green-50 p-4 sm:p-5">
-					<div class="flex items-center gap-3 mb-4">
-						<div class="w-11 h-11 rounded-full bg-green-600 text-white flex items-center justify-center flex-shrink-0">
-							<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-								<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-							</svg>
-						</div>
-						<div class="min-w-0">
-							<div class="text-lg font-bold text-green-800">{{ __("Payment Completed") }}</div>
-							<div class="text-xs text-green-700 truncate">
-								{{ __("Invoice") }}: {{ completedPaymentSummary.invoice_name }}
-							</div>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-2 text-sm mb-4">
-						<div class="rounded-lg bg-white border border-green-100 p-3">
-							<div class="text-xs text-gray-500">{{ __("Grand Total") }}</div>
-							<div class="font-bold text-gray-900">{{ formatCurrency(completedPaymentSummary.grand_total) }}</div>
-						</div>
-						<div class="rounded-lg bg-white border border-green-100 p-3">
-							<div class="text-xs text-gray-500">{{ __("Cash Received") }}</div>
-							<div class="font-bold text-gray-900">{{ formatCurrency(completedPaymentSummary.cash_paid) }}</div>
-						</div>
-					</div>
-
-					<div class="rounded-xl border-2 border-green-500 bg-white px-4 py-5 text-center mb-4">
-						<div class="text-sm font-semibold uppercase tracking-wide text-green-700">{{ __("Change Due") }}</div>
-						<div class="mt-1 text-4xl sm:text-5xl font-black text-green-700">
-							{{ formatCurrency(completedPaymentSummary.change_amount) }}
-						</div>
-					</div>
-
-					<div
-						:class="[
-							'rounded-lg border px-3 py-2 text-xs font-medium mb-4',
-							completedPaymentSummary.print_status === 'printed'
-								? 'border-green-200 bg-green-100 text-green-800'
-								: completedPaymentSummary.print_status === 'failed'
-									? 'border-amber-300 bg-amber-50 text-amber-800'
-									: 'border-gray-200 bg-white text-gray-600',
-						]"
-					>
-						<span v-if="completedPaymentSummary.print_status === 'printed'">✓ {{ __("Receipt Printed") }}</span>
-						<span v-else-if="completedPaymentSummary.print_status === 'failed'">⚠ {{ __("Invoice submitted, but receipt printing failed") }}</span>
-						<span v-else-if="completedPaymentSummary.print_status === 'printing'">{{ __("Printing receipt...") }}</span>
-						<span v-else>{{ __("Invoice submitted successfully") }}</span>
-					</div>
-
-					<button
-						type="button"
-						@click="emit('new-sale')"
-						class="w-full h-12 rounded-xl bg-blue-600 text-white text-base font-bold hover:bg-blue-700 active:bg-blue-800"
-					>
-						{{ __("New Sale") }}
-					</button>
-				</div>
-			</div>
-
 			<!-- Two Column Layout - auto-sized on mobile, constrained on desktop -->
 			<div
-				v-else
 				:class="[
 					'pos-payment-dialog-marker grid grid-cols-1 lg:grid-cols-5 items-stretch',
 					dynamicGap,
-					(isSubmitting || localSubmissionRequested || submissionState === 'processing')
-						? 'pointer-events-none opacity-75'
-						: '',
 					isMobileView ? '' : 'overflow-hidden',
 				]"
 				:style="isMobileView ? {} : { maxHeight: dialogContentMaxHeight }"
@@ -2216,14 +2148,6 @@ const props = defineProps({
 		type: Object,
 		default: () => ({}),
 	},
-	submissionState: {
-		type: String,
-		default: "idle",
-	},
-	completedPaymentSummary: {
-		type: Object,
-		default: null,
-	},
 });
 
 const emit = defineEmits([
@@ -2233,42 +2157,12 @@ const emit = defineEmits([
 	"update-additional-discount",
 	"show-offers",
 	"show-coupon",
-	"new-sale",
 ]);
-
-const localSubmissionRequested = ref(false);
-
-const paymentDialogTitle = computed(() => {
-	if (props.completedPaymentSummary) return __("Payment Completed");
-	return isSalesOrder.value ? __("Complete Sales Order") : __("Complete Payment");
-});
-
-const dialogLocked = computed(
-	() =>
-		localSubmissionRequested.value ||
-		props.submissionState === "processing" ||
-		Boolean(props.completedPaymentSummary)
-);
 
 const show = computed({
 	get: () => props.modelValue,
-	set: (val) => {
-		// Never allow the shell X / escape / external v-model close to dismiss an
-		// in-flight or completed cash-change transaction.
-		if (!val && dialogLocked.value) return;
-		emit("update:modelValue", val);
-	},
+	set: (val) => emit("update:modelValue", val),
 });
-
-watch(
-	() => [props.submissionState, props.modelValue, props.completedPaymentSummary],
-	([state, isOpen, summary]) => {
-		if (!isOpen || (state === "idle" && !summary)) {
-			localSubmissionRequested.value = false;
-		}
-	},
-	{ deep: false }
-);
 
 const paymentMethods = ref([]);
 const loadingPaymentMethods = ref(false);
@@ -3800,8 +3694,6 @@ function clearAll() {
 }
 
 function completePayment() {
-	if (dialogLocked.value) return;
-
 	log.debug("[PaymentDialog] Complete payment called:", {
 		canComplete: canComplete.value,
 		totalPaid: totalPaid.value,
@@ -3863,8 +3755,9 @@ function completePayment() {
 	log.debug("[PaymentDialog] Emitting payment-completed:", paymentData);
 
 	clearSalesPersonRecovery();
-	localSubmissionRequested.value = true;
 	emit("payment-completed", paymentData);
+
+	show.value = false;
 }
 
 function formatCurrency(amount) {
@@ -4047,13 +3940,6 @@ watch(
 > button[data-grace-area-trigger] svg {
 	width: 20px !important;
 	height: 20px !important;
-}
-
-/* A completed cash-change sale can only leave through the explicit New Sale button. */
-[role="dialog"]:has(.pos-payment-dialog-completed)
-.mb-6.flex.items-center.justify-between
-> button[data-grace-area-trigger] {
-	display: none !important;
 }
 
 /* Prevent the shell from forcing content outside the viewport. */
