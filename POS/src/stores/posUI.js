@@ -43,6 +43,8 @@ export const usePOSUIStore = defineStore("posUI", () => {
 	const lastInvoiceName = ref("");
 	const lastInvoiceTotal = ref(0);
 	const lastPaidAmount = ref(0);
+	const lastChangeAmount = ref(0);
+	const lastPaymentMethods = ref([]);
 	/** Full receipt payload for invoices not yet on the server (offline queue) */
 	const lastOfflinePrintDoc = ref(null);
 
@@ -91,10 +93,14 @@ export const usePOSUIStore = defineStore("posUI", () => {
 		showErrorDialog.value = false;
 	}
 
-	function showSuccess(invoiceName, total, paidAmount = null) {
+	function showSuccess(invoiceName, total, paidAmount = null, paymentSummary = null) {
 		lastInvoiceName.value = invoiceName;
 		lastInvoiceTotal.value = total;
 		lastPaidAmount.value = paidAmount !== null ? paidAmount : total;
+		lastChangeAmount.value = Number(paymentSummary?.changeAmount || 0);
+		lastPaymentMethods.value = Array.isArray(paymentSummary?.payments)
+			? paymentSummary.payments.map((row) => ({ ...row }))
+			: [];
 		showSuccessDialog.value = true;
 	}
 
@@ -193,6 +199,8 @@ export const usePOSUIStore = defineStore("posUI", () => {
 		lastInvoiceName,
 		lastInvoiceTotal,
 		lastPaidAmount,
+		lastChangeAmount,
+		lastPaymentMethods,
 		lastOfflinePrintDoc,
 		initialCustomerName,
 		mobileActiveTab,

@@ -729,6 +729,15 @@
 												"
 											/>
 											<CheckboxField
+												v-model="settings.show_cashier_thank_you"
+												:label="__('Show Cashier Thank You Screen')"
+												:description="
+													__(
+														'Show a full-screen payment summary with Paid, Change Due and New Sale after a successful checkout'
+													)
+												"
+											/>
+											<CheckboxField
 												v-model="settings.silent_print"
 												:label="__('Silent Print')"
 												:description="

@@ -29,6 +29,7 @@ POS_SETTINGS_FIELDS = [
 	"allow_return_without_invoice",
 	"allow_exchange",
 	"allow_partial_payment",
+	"show_cashier_thank_you",
 	"use_exact_amount",
 	"decimal_precision",
 	"allow_negative_stock",
@@ -123,6 +124,7 @@ DEFAULT_POS_SETTINGS = {
 	"allow_exchange": 1,
 	"allow_write_off_change": 0,  # Derived from POS Profile
 	"allow_partial_payment": 0,
+	"show_cashier_thank_you": 0,
 	"use_exact_amount": 0,
 	"decimal_precision": "2",
 	"allow_negative_stock": 0,

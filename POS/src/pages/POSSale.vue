@@ -995,60 +995,17 @@
 				</template>
 			</Dialog>
 
-			<!-- Success Dialog -->
-			<Dialog
+			<!-- Full-window cashier completion dialog. Uses the existing globally tracked
+			     success-dialog state so scanner autofocus stays paused until New Sale. -->
+			<CashierSuccessDialog
 				v-model="uiStore.showSuccessDialog"
-				:options="{ title: __('Invoice Created Successfully'), size: 'md' }"
-			>
-				<template #body-content>
-					<div class="text-center py-6">
-						<div
-							class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100"
-						>
-							<svg
-								class="h-6 w-6 text-green-600"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M5 13l4 4L19 7"
-								/>
-							</svg>
-						</div>
-						<h3 class="mt-4 text-lg font-medium text-gray-900">
-							{{
-								__("Invoice {0} created successfully!", [uiStore.lastInvoiceName])
-							}}
-						</h3>
-						<p class="mt-2 text-sm text-gray-500">
-							{{ __("Paid: {0}", [formatCurrency(uiStore.lastPaidAmount)]) }}
-						</p>
-					</div>
-				</template>
-				<template #actions>
-					<div class="flex gap-2">
-						<Button variant="subtle" @click="uiStore.showSuccessDialog = false">
-							{{ __("Close") }}
-						</Button>
-						<Button
-							variant="solid"
-							theme="blue"
-							@click="
-								() => {
-									handlePrintInvoice({ name: uiStore.lastInvoiceName });
-									uiStore.showSuccessDialog = false;
-								}
-							"
-						>
-							{{ __("Print Invoice") }}
-						</Button>
-					</div>
-				</template>
-			</Dialog>
+				:invoice-name="uiStore.lastInvoiceName"
+				:paid-amount="uiStore.lastPaidAmount"
+				:change-amount="uiStore.lastChangeAmount"
+				:payment-methods="uiStore.lastPaymentMethods"
+				:currency="shiftStore.profileCurrency"
+				@new-sale="handleCashierSuccessNewSale"
+			/>
 
 			<!-- Error Dialog -->
 			<Dialog
@@ -1136,6 +1093,7 @@ import ManagementSlider from "@/components/pos/ManagementSlider.vue";
 import POSHeader from "@/components/pos/POSHeader.vue";
 import BatchSerialDialog from "@/components/sale/BatchSerialDialog.vue";
 import CouponDialog from "@/components/sale/CouponDialog.vue";
+import CashierSuccessDialog from "@/components/sale/CashierSuccessDialog.vue";
 import CreateCustomerDialog from "@/components/sale/CreateCustomerDialog.vue";
 import CustomerDialog from "@/components/sale/CustomerDialog.vue";
 import DraftInvoicesDialog from "@/components/sale/DraftInvoicesDialog.vue";
@@ -3199,6 +3157,11 @@ function handleCustomerDisplayPaymentUpdated(paymentData) {
 	customerDisplayStore.setPayment(paymentData);
 }
 
+function handleCashierSuccessNewSale() {
+	uiStore.showSuccessDialog = false;
+	customerDisplayStore.clearToIdle();
+}
+
 async function handlePaymentCompleted(paymentData) {
 	try {
 		const customerValue = cartStore.customer?.name || cartStore.customer;
@@ -3359,7 +3322,12 @@ async function handlePaymentCompleted(paymentData) {
 					);
 				} catch (error) {
 					log.error("Offline auto-print error:", error);
-					uiStore.showSuccess(offlineReceiptName, grandTotal, paymentData.paid_amount);
+					if (Number(posSettingsStore.settings.show_cashier_thank_you || 0) === 1) {
+						uiStore.showSuccess(offlineReceiptName, grandTotal, paymentData.paid_amount, {
+							payments: paymentData.payments || [],
+							changeAmount: paymentData.change_amount || 0,
+						});
+					}
 					showWarning(
 						__(
 							"Invoice {0} saved offline but print failed — open Print from the success dialog",
@@ -3368,7 +3336,12 @@ async function handlePaymentCompleted(paymentData) {
 					);
 				}
 			} else {
-				uiStore.showSuccess(offlineReceiptName, grandTotal, paymentData.paid_amount);
+				if (Number(posSettingsStore.settings.show_cashier_thank_you || 0) === 1) {
+					uiStore.showSuccess(offlineReceiptName, grandTotal, paymentData.paid_amount, {
+						payments: paymentData.payments || [],
+						changeAmount: paymentData.change_amount || 0,
+					});
+				}
 				showSuccess(__("Invoice saved offline. Will sync when online"));
 			}
 		} else {
@@ -3411,6 +3384,12 @@ async function handlePaymentCompleted(paymentData) {
 				const paidAmount = paymentData.paid_amount || invoiceTotal;
 
 				customerDisplayStore.showCompleted({ invoice: result, payment: paymentData });
+				if (Number(posSettingsStore.settings.show_cashier_thank_you || 0) === 1) {
+					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount, {
+						payments: paymentData.payments || [],
+						changeAmount: paymentData.change_amount || 0,
+					});
+				}
 				uiStore.showPaymentDialog = false;
 				discardActiveCartRecovery();
 				cartStore.clearCart();
@@ -3446,7 +3425,6 @@ async function handlePaymentCompleted(paymentData) {
 						showWarning(__("Invoice {0} created but print failed", [invoiceName]));
 					}
 				} else {
-					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount);
 					showSuccess(__("Invoice {0} created successfully", [invoiceName]));
 				}
 			}

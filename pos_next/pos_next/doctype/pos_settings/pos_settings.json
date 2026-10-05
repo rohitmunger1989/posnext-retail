@@ -32,6 +32,7 @@
   "default_card_view",
   "display_item_code",
   "show_customer_balance",
+  "show_cashier_thank_you",
   "column_break_display",
   "hide_expected_amount",
   "display_discount_percentage",
@@ -346,6 +347,13 @@
    "fieldname": "show_customer_balance",
    "fieldtype": "Check",
    "label": "Show Customer Balance"
+  },
+  {
+   "default": "0",
+   "description": "Show a full-screen cashier payment summary with Paid, Change Due and New Sale after a successful checkout.",
+   "fieldname": "show_cashier_thank_you",
+   "fieldtype": "Check",
+   "label": "Show Cashier Thank You Screen"
   },
   {
    "fieldname": "column_break_display",
