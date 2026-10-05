@@ -1507,16 +1507,102 @@ function handleClose() {
 }
 
 async function openCustomerDisplay() {
-	if (!props.posProfile || !settings.value.customer_display_enabled) return;
+	if (!props.posProfile || !settings.value.customer_display_enabled) {
+		return;
+	}
+
 	const identity = await resolveTerminalIdentity(props.posProfile);
 	const terminalId = String(identity?.terminalId || "").trim();
+
 	if (!terminalId) {
 		showError(__("Set the Terminal ID in Printer & Cash Drawer Setup first."));
 		return;
 	}
+
+	const profile = encodeURIComponent(props.posProfile);
 	const terminal = encodeURIComponent(terminalId);
-	const url = `/pos/customer-display?profile=${encodeURIComponent(props.posProfile)}&terminal=${terminal}`;
-	window.open(url, `POSNextCustomerDisplay_${terminalId}`, "popup=yes,width=1280,height=720,resizable=yes");
+	const url = `/pos/customer-display?profile=${profile}&terminal=${terminal}`;
+
+	const windowName = `POSNextCustomerDisplay_${terminalId}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+	let left = Number(window.screen?.availLeft ?? 0);
+	let top = Number(window.screen?.availTop ?? 0);
+	let width = Number(window.screen?.availWidth ?? window.screen?.width ?? 1280);
+	let height = Number(window.screen?.availHeight ?? window.screen?.height ?? 720);
+
+	try {
+		if (typeof window.getScreenDetails === "function") {
+			const details = await window.getScreenDetails();
+			const screens = Array.isArray(details?.screens) ? details.screens : [];
+			let targetScreen = null;
+
+			if (screens.length === 2) {
+				targetScreen = screens.find((screen) => !screen.isPrimary) || null;
+			} else if (screens.length > 2) {
+				targetScreen = screens
+					.filter((screen) => !screen.isPrimary)
+					.sort((a, b) => {
+						const ax = Number(a.left ?? a.availLeft ?? 0);
+						const bx = Number(b.left ?? b.availLeft ?? 0);
+
+						if (ax !== bx) return ax - bx;
+
+						const ay = Number(a.top ?? a.availTop ?? 0);
+						const by = Number(b.top ?? b.availTop ?? 0);
+						return ay - by;
+					})[0] || null;
+			}
+
+			if (targetScreen) {
+				left = Number(targetScreen.availLeft ?? targetScreen.left ?? left);
+				top = Number(targetScreen.availTop ?? targetScreen.top ?? top);
+				width = Number(targetScreen.availWidth ?? targetScreen.width ?? width);
+				height = Number(targetScreen.availHeight ?? targetScreen.height ?? height);
+			}
+		}
+	} catch (error) {
+		console.warn("[CustomerDisplay] Unable to access screen details:", error);
+	}
+
+	left = Math.round(left);
+	top = Math.round(top);
+	width = Math.round(width);
+	height = Math.round(height);
+
+	const features = [
+		"popup=yes",
+		`left=${left}`,
+		`top=${top}`,
+		`width=${width}`,
+		`height=${height}`,
+		"resizable=yes",
+		"scrollbars=no",
+	].join(",");
+
+	try {
+		const displayWindow = window.open(url, windowName, features);
+
+		if (!displayWindow) {
+			showError(__("Customer Display popup was blocked by the browser."));
+			return;
+		}
+
+		try {
+			displayWindow.moveTo(left, top);
+			displayWindow.resizeTo(width, height);
+		} catch (_) {
+			// Browser may restrict popup positioning/resizing.
+		}
+
+		try {
+			displayWindow.focus();
+		} catch (_) {
+			// Ignore browser focus restrictions.
+		}
+	} catch (error) {
+		console.error("[CustomerDisplay] Unable to open display:", error);
+		showError(__("Unable to open Customer Display."));
+	}
 }
 
 async function loadSettings() {
