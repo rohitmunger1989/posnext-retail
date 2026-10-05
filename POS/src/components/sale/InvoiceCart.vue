@@ -698,14 +698,14 @@
 		<div class="flex-1 overflow-y-auto p-0.5 sm:p-1.5 bg-gray-50">
 			<div
 				v-if="items.length === 0"
-				class="flex flex-col items-center justify-center h-full px-3 sm:px-4 py-6"
+				class="flex flex-col items-center justify-center h-full px-3 sm:px-4 py-4"
 			>
 				<!-- Empty Cart Icon & Message -->
 				<div
-					class="w-14 h-14 sm:w-16 sm:h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3"
+					class="w-12 h-12 sm:w-14 sm:h-14 bg-gray-100 rounded-full flex items-center justify-center mb-2"
 				>
 					<svg
-						class="h-7 w-7 sm:h-8 sm:w-8 text-gray-400"
+						class="h-6 w-6 sm:h-7 sm:w-7 text-gray-400"
 						fill="none"
 						stroke="currentColor"
 						viewBox="0 0 24 24"
@@ -721,24 +721,24 @@
 				<p class="text-xs sm:text-sm font-semibold text-gray-900 mb-1">
 					{{ __("Your cart is empty") }}
 				</p>
-				<p class="text-[10px] sm:text-xs text-gray-500 mb-5 sm:mb-6">
+				<p class="text-[10px] sm:text-xs text-gray-500 mb-3 sm:mb-4">
 					{{ __("Select items to start or choose a quick action") }}
 				</p>
 
 				<!-- Quick Actions Grid -->
-				<div class="grid grid-cols-2 gap-2 sm:gap-2.5 w-full max-w-lg">
+				<div class="grid grid-cols-2 gap-1.5 sm:gap-2 w-full max-w-md">
 					<!-- View Shift -->
 					<button
 						type="button"
 						@click="$emit('view-shift')"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 active:bg-blue-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 active:bg-blue-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('View current shift details')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-blue-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-blue-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-blue-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-blue-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-blue-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-blue-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -757,7 +757,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("View Shift")
 						}}</span>
 					</button>
@@ -766,14 +766,14 @@
 					<button
 						type="button"
 						@click="$emit('show-drafts')"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 active:bg-purple-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 active:bg-purple-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('View draft invoices')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-purple-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-purple-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-purple-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-purple-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-purple-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-purple-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -786,7 +786,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("Draft Invoices")
 						}}</span>
 					</button>
@@ -795,14 +795,14 @@
 					<button
 						type="button"
 						@click="$emit('show-history')"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('View invoice history')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-gray-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-gray-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-gray-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-gray-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-gray-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -815,7 +815,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("Invoice History")
 						}}</span>
 					</button>
@@ -824,14 +824,14 @@
 					<button
 						type="button"
 						@click="$emit('show-return')"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-red-300 hover:bg-red-50 active:bg-red-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-red-300 hover:bg-red-50 active:bg-red-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('Process return invoice')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-red-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-red-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-red-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-red-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-red-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-red-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -844,7 +844,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("Return Invoice")
 						}}</span>
 					</button>
@@ -853,14 +853,14 @@
 					<button
 						type="button"
 						@click="$emit('close-shift')"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-orange-300 hover:bg-orange-50 active:bg-orange-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-orange-300 hover:bg-orange-50 active:bg-orange-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('Close current shift')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-orange-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-orange-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-orange-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-orange-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-orange-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-orange-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -873,7 +873,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("Close Shift")
 						}}</span>
 					</button>
@@ -882,14 +882,14 @@
 					<button
 						type="button"
 						@click="$emit('create-customer', '')"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-green-300 hover:bg-green-50 active:bg-green-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-green-300 hover:bg-green-50 active:bg-green-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('Create new customer')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-green-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-green-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-green-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-green-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-green-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-green-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -902,7 +902,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("Create Customer")
 						}}</span>
 					</button>
@@ -911,14 +911,14 @@
 					<button
 						type="button"
 						@click="$emit('show-shift-history')"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('View shift history')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-indigo-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-indigo-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-indigo-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-indigo-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-indigo-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -931,7 +931,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("Shift History")
 						}}</span>
 					</button>
@@ -942,14 +942,14 @@
 						v-if="cashDrawerEnabled && allowManualCashDrawer"
 						type="button"
 						@click="openCashDrawerDialog"
-						class="flex flex-col items-center justify-center p-3 sm:p-4 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('Open cash drawer')"
 					>
 						<div
-							class="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-emerald-100 transition-colors"
+							class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-emerald-100 transition-colors"
 						>
 							<svg
-								class="w-5 h-5 text-emerald-600"
+								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-emerald-600"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -962,7 +962,7 @@
 								/>
 							</svg>
 						</div>
-						<span class="text-[11px] sm:text-xs font-semibold text-gray-700">{{
+						<span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{
 							__("Open Drawer")
 						}}</span>
 					</button>
