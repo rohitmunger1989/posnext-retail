@@ -1,6 +1,7 @@
 <template>
 	<Dialog
 		v-model="show"
+		:disable-outside-click-to-close="true"
 		:options="{
 			title: isSalesOrder ? __('Complete Sales Order') : __('Complete Payment'),
 			size: dynamicDialogSize,

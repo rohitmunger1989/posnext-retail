@@ -29,9 +29,9 @@ export function useResponsivePayment() {
 		const width = viewportWidth.value;
 		if (width < 640) return "full"; // Mobile: full screen
 		if (width < 768) return "full"; // Small tablet: full screen for better usability
-		if (width < 1024) return "4xl"; // Tablet
-		if (width < 1280) return "5xl"; // Small desktop
-		return "6xl"; // Large desktop
+		if (width < 1024) return "3xl"; // Tablet
+		if (width < 1280) return "4xl"; // Small desktop
+		return "5xl"; // Large desktop
 	});
 
 	// Check if we're on a mobile device (for mobile-specific behavior)
@@ -46,9 +46,9 @@ export function useResponsivePayment() {
 		if (width < 1024) {
 			return "none";
 		}
-		// Desktop: use fixed pixel calculation
-		const availableHeight = height - 100;
-		return `${Math.min(Math.max(500, availableHeight), height - 80)}px`;
+		// Desktop: leave more breathing room for the dialog header and browser chrome.
+		const availableHeight = height - 140;
+		return `${Math.min(Math.max(420, availableHeight), height - 120)}px`;
 	});
 
 	// Dynamic column heights based on viewport
@@ -58,13 +58,13 @@ export function useResponsivePayment() {
 			// Mobile/tablet: auto height, will stack
 			return "auto";
 		}
-		// Desktop: calculate based on available space
-		const availableHeight = height - 160; // Header + padding + action buttons
-		return `${Math.max(400, Math.min(availableHeight, height - 120))}px`;
+		// Desktop: calculate based on available space with a compact POS-safe margin.
+		const availableHeight = height - 200; // Header + padding + action buttons
+		return `${Math.max(340, Math.min(availableHeight, height - 150))}px`;
 	});
 
 	// Check if we're in compact mode (small screens)
-	const isCompactMode = computed(() => viewportHeight.value < 700 || viewportWidth.value < 1024);
+	const isCompactMode = computed(() => viewportHeight.value < 800 || viewportWidth.value < 1024);
 
 	// Check if we're on a very small mobile screen
 	const isSmallMobile = computed(() => viewportWidth.value < 360 || viewportHeight.value < 600);
@@ -100,8 +100,8 @@ export function useResponsivePayment() {
 				grandTotal: "text-lg",
 			};
 		}
-		// Tablet and small height screens
-		if (height < 700) {
+		// Tablet and typical POS-height screens
+		if (height < 800) {
 			return {
 				header: "text-sm",
 				body: "text-sm",
@@ -127,8 +127,8 @@ export function useResponsivePayment() {
 		if (width < 360 || height < 550) return "h-9";
 		// Small phones
 		if (width < 640) return "h-10";
-		// Short screens
-		if (height < 700) return "h-10";
+		// Short / standard POS screens
+		if (height < 800) return "h-10";
 		return "h-12";
 	});
 
@@ -163,9 +163,9 @@ export function useResponsivePayment() {
 
 	// Dynamic numpad key size
 	const dynamicNumpadSize = computed(() => {
-		if (viewportHeight.value < 600) return { key: "h-10", addBtn: "h-[6.5rem]" };
-		if (viewportHeight.value < 700) return { key: "h-10", addBtn: "h-[7rem]" };
-		return { key: "h-12", addBtn: "h-[8.5rem]" };
+		if (viewportHeight.value < 600) return { key: "h-9", addBtn: "h-[6rem]" };
+		if (viewportHeight.value < 800) return { key: "h-10", addBtn: "h-[7rem]" };
+		return { key: "h-11", addBtn: "h-[8rem]" };
 	});
 
 	return {
