@@ -11,7 +11,7 @@
 			<!-- Two Column Layout - auto-sized on mobile, constrained on desktop -->
 			<div
 				:class="[
-					'grid grid-cols-1 lg:grid-cols-5 items-stretch',
+					'pos-payment-dialog-marker grid grid-cols-1 lg:grid-cols-5 items-stretch',
 					dynamicGap,
 					isMobileView ? '' : 'overflow-hidden',
 				]"
@@ -3869,3 +3869,81 @@ watch(
 	}
 );
 </script>
+
+<style>
+/*
+ * Payment dialog shell styling.
+ * frappe-ui teleports the actual dialog outside this component, so we target
+ * the rendered role=dialog only when it contains our unique marker.
+ */
+[role="dialog"]:has(.pos-payment-dialog-marker) {
+	width: min(94vw, 1280px) !important;
+	max-width: min(94vw, 1280px) !important;
+	max-height: calc(100dvh - 24px) !important;
+	margin-top: 12px !important;
+	margin-bottom: 12px !important;
+	border-radius: 14px !important;
+}
+
+/* On smaller workstation screens, use more of the available width safely. */
+@media (max-width: 1100px) {
+	[role="dialog"]:has(.pos-payment-dialog-marker) {
+		width: 96vw !important;
+		max-width: 96vw !important;
+		max-height: calc(100dvh - 16px) !important;
+		margin-top: 8px !important;
+		margin-bottom: 8px !important;
+	}
+}
+
+/* Keep the dialog bounded on large monitors instead of stretching edge-to-edge. */
+@media (min-width: 1600px) {
+	[role="dialog"]:has(.pos-payment-dialog-marker) {
+		width: min(78vw, 1280px) !important;
+		max-width: min(78vw, 1280px) !important;
+	}
+}
+
+/*
+ * In the current frappe-ui DOM, the close control is a direct child button of
+ * role=dialog and has no aria-label. This selector therefore scopes precisely
+ * to the payment dialog's shell button.
+ */
+[role="dialog"]:has(.pos-payment-dialog-marker)
+.mb-6.flex.items-center.justify-between
+> button[data-grace-area-trigger] {
+	width: 42px !important;
+	height: 42px !important;
+	min-width: 42px !important;
+	min-height: 42px !important;
+	padding: 0 !important;
+	border: 2px solid #ef4444 !important;
+	border-radius: 10px !important;
+	background: #fff1f2 !important;
+	color: #dc2626 !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	box-shadow: 0 1px 3px rgba(220, 38, 38, 0.14) !important;
+}
+
+[role="dialog"]:has(.pos-payment-dialog-marker)
+.mb-6.flex.items-center.justify-between
+> button[data-grace-area-trigger]:hover {
+	background: #fee2e2 !important;
+	border-color: #dc2626 !important;
+	color: #b91c1c !important;
+}
+
+[role="dialog"]:has(.pos-payment-dialog-marker)
+.mb-6.flex.items-center.justify-between
+> button[data-grace-area-trigger] svg {
+	width: 20px !important;
+	height: 20px !important;
+}
+
+/* Prevent the shell from forcing content outside the viewport. */
+[role="dialog"]:has(.pos-payment-dialog-marker) .pos-payment-dialog-marker {
+	max-height: calc(100dvh - 104px) !important;
+}
+</style>

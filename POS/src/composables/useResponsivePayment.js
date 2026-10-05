@@ -24,43 +24,39 @@ export function useResponsivePayment() {
 		window.removeEventListener("resize", updateViewportDimensions);
 	});
 
-	// Dynamic dialog size based on viewport
+	// Keep frappe-ui on a desktop-sized shell; the actual rendered dialog width
+	// is controlled by the scoped viewport CSS in PaymentDialog.vue.
 	const dynamicDialogSize = computed(() => {
 		const width = viewportWidth.value;
-		if (width < 640) return "full"; // Mobile: full screen
-		if (width < 768) return "full"; // Small tablet: full screen for better usability
-		if (width < 1024) return "3xl"; // Tablet
-		if (width < 1280) return "4xl"; // Small desktop
-		return "5xl"; // Large desktop
+		if (width < 768) return "full";
+		return "5xl";
 	});
 
 	// Check if we're on a mobile device (for mobile-specific behavior)
 	const isMobileView = computed(() => viewportWidth.value < 1024);
 
-	// Dynamic content max height based on viewport
+	// Fit desktop content to the current viewport height. Cap the height on large
+	// monitors so the payment UI stays comfortable instead of oversized.
 	const dialogContentMaxHeight = computed(() => {
 		const height = viewportHeight.value;
 		const width = viewportWidth.value;
 
-		// On mobile, don't set max-height - let content determine size
 		if (width < 1024) {
 			return "none";
 		}
-		// Desktop: leave more breathing room for the dialog header and browser chrome.
-		const availableHeight = height - 140;
-		return `${Math.min(Math.max(420, availableHeight), height - 120)}px`;
+
+		return `${Math.min(720, Math.max(420, height - 118))}px`;
 	});
 
-	// Dynamic column heights based on viewport
+	// Keep the summary column aligned with the available dialog body height.
 	const dynamicLeftColumnHeight = computed(() => {
 		const height = viewportHeight.value;
+
 		if (viewportWidth.value < 1024) {
-			// Mobile/tablet: auto height, will stack
 			return "auto";
 		}
-		// Desktop: calculate based on available space with a compact POS-safe margin.
-		const availableHeight = height - 200; // Header + padding + action buttons
-		return `${Math.max(340, Math.min(availableHeight, height - 150))}px`;
+
+		return `${Math.min(650, Math.max(340, height - 178))}px`;
 	});
 
 	// Check if we're in compact mode (small screens)
