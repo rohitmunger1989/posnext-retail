@@ -562,7 +562,10 @@
 				:is-submitting="cartStore.isSubmitting"
 				:payment-hub-config="paymentHubConfig"
 				:applied-offer-count="cartStore.appliedOffers.length"
+				:submission-state="paymentSubmissionState"
+				:completed-payment-summary="completedPaymentSummary"
 				@payment-completed="handlePaymentCompleted"
+				@new-sale="handleCompletedPaymentNewSale"
 				@payment-updated="handleCustomerDisplayPaymentUpdated"
 				@update-additional-discount="handleAdditionalDiscountUpdate"
 				@show-offers="uiStore.showOffersDialog = true"
@@ -1497,6 +1500,11 @@ const clearCacheOverlayRef = ref(null);
 const paymentHubConfig = ref(null);
 const paymentHubQueueCounts = ref({ waiting: 0, paid: 0, failed: 0 });
 const showPaymentHubPendingDialog = ref(false);
+
+// Cash-change completion state. The cart is still cleared immediately after a
+// successful submit; this immutable snapshot exists only for cashier handoff.
+const paymentSubmissionState = ref("idle");
+const completedPaymentSummary = ref(null);
 
 // Retail Return / Exchange launcher and one-shot checkout state.
 const showRetailReturnMenu = ref(false);
@@ -3199,10 +3207,21 @@ function handleCustomerDisplayPaymentUpdated(paymentData) {
 	customerDisplayStore.setPayment(paymentData);
 }
 
+function handleCompletedPaymentNewSale() {
+	completedPaymentSummary.value = null;
+	paymentSubmissionState.value = "idle";
+	uiStore.showPaymentDialog = false;
+	customerDisplayStore.clearToIdle();
+}
+
 async function handlePaymentCompleted(paymentData) {
+	completedPaymentSummary.value = null;
+	paymentSubmissionState.value = "processing";
+
 	try {
 		const customerValue = cartStore.customer?.name || cartStore.customer;
 		if (!customerValue && !shiftStore.profileCustomer) {
+			paymentSubmissionState.value = "idle";
 			showWarning(__("Please select a customer before proceeding"));
 			uiStore.showPaymentDialog = false;
 			uiStore.showCustomerDialog = true;
@@ -3257,6 +3276,7 @@ async function handlePaymentCompleted(paymentData) {
 
 		if (hasElectronicPayment || hasPhysicalPayment) {
 			await startPaymentHubMappedSale(paymentData, customerValue, draftIdToDelete);
+			paymentSubmissionState.value = "idle";
 			return;
 		}
 
@@ -3371,6 +3391,7 @@ async function handlePaymentCompleted(paymentData) {
 				uiStore.showSuccess(offlineReceiptName, grandTotal, paymentData.paid_amount);
 				showSuccess(__("Invoice saved offline. Will sync when online"));
 			}
+			paymentSubmissionState.value = "idle";
 		} else {
 			// Get item codes from cart before clearing
 			const soldItemCodes = cartStore.invoiceItems.map((item) => item.item_code);
@@ -3409,9 +3430,37 @@ async function handlePaymentCompleted(paymentData) {
 				const invoiceName = result.name || result.message?.name || __("Unknown");
 				const invoiceTotal = result.grand_total || result.total || 0;
 				const paidAmount = paymentData.paid_amount || invoiceTotal;
+				const cashPaidAmount = (paymentData.payments || [])
+					.filter(
+						(row) =>
+							Number(row.amount || 0) > 0 &&
+							(String(row.type || "").toLowerCase() === "cash" ||
+								isPaymentHubCashMode(row.mode_of_payment))
+					)
+					.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+				const changeDue = Number(paymentData.change_amount || 0);
+				const holdForCashChange = cashPaidAmount > 0.001 && changeDue > 0.001;
 
 				customerDisplayStore.showCompleted({ invoice: result, payment: paymentData });
-				uiStore.showPaymentDialog = false;
+
+				if (holdForCashChange) {
+					completedPaymentSummary.value = {
+						invoice_name: invoiceName,
+						grand_total: Number(invoiceTotal || 0),
+						paid_amount: Number(paidAmount || 0),
+						cash_paid: Number(cashPaidAmount || 0),
+						change_amount: changeDue,
+						print_status:
+							shiftStore.autoPrintEnabled || posSettingsStore.silentPrint
+								? "printing"
+								: "not_printed",
+					};
+					paymentSubmissionState.value = "completed";
+				} else {
+					paymentSubmissionState.value = "idle";
+					uiStore.showPaymentDialog = false;
+				}
+
 				discardActiveCartRecovery();
 				cartStore.clearCart();
 				// Reset cart hash after successful payment
@@ -3440,8 +3489,20 @@ async function handlePaymentCompleted(paymentData) {
 				if (shiftStore.autoPrintEnabled || posSettingsStore.silentPrint) {
 					try {
 						await handlePrintInvoice({ name: invoiceName });
+						if (holdForCashChange && completedPaymentSummary.value) {
+							completedPaymentSummary.value = {
+								...completedPaymentSummary.value,
+								print_status: "printed",
+							};
+						}
 						showSuccess(__("Invoice {0} created and sent to printer", [invoiceName]));
 					} catch (error) {
+						if (holdForCashChange && completedPaymentSummary.value) {
+							completedPaymentSummary.value = {
+								...completedPaymentSummary.value,
+								print_status: "failed",
+							};
+						}
 						log.error("Auto-print error:", error);
 						showWarning(__("Invoice {0} created but print failed", [invoiceName]));
 					}
@@ -3449,11 +3510,16 @@ async function handlePaymentCompleted(paymentData) {
 					uiStore.showSuccess(invoiceName, invoiceTotal, paidAmount);
 					showSuccess(__("Invoice {0} created successfully", [invoiceName]));
 				}
+			} else {
+				paymentSubmissionState.value = "idle";
 			}
 		}
 	} catch (error) {
 		log.error("Error submitting invoice:", error);
-		uiStore.showPaymentDialog = false;
+		completedPaymentSummary.value = null;
+		paymentSubmissionState.value = "idle";
+		// Keep the Payment Dialog open so the cashier can see the real error,
+		// correct the tender/cart if needed, and retry without losing the transaction.
 
 		// Checkout failed mid-edit — clear the edit context so the NEXT
 		// checkout doesn't supersede the wrong row on a fresh, unrelated sale.
