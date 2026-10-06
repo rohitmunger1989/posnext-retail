@@ -31,6 +31,14 @@
   "collected_amount",
   "outstanding_total",
   "total_quantity",
+  "sales_total",
+  "returns_total",
+  "sales_count",
+  "returns_count",
+  "sales_quantity",
+  "returns_quantity",
+  "customer_credit_redeemed",
+  "customer_credit_issued",
   "column_break_16",
   "taxes",
   "section_break_14",
@@ -172,6 +180,62 @@
    "fieldname": "total_quantity",
    "fieldtype": "Float",
    "label": "Total Quantity",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sales_total",
+   "fieldtype": "Currency",
+   "label": "Gross Sales",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "returns_total",
+   "fieldtype": "Currency",
+   "label": "Returns Total",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sales_count",
+   "fieldtype": "Int",
+   "label": "Sales Count",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "returns_count",
+   "fieldtype": "Int",
+   "label": "Returns Count",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sales_quantity",
+   "fieldtype": "Float",
+   "label": "Sold Quantity",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "returns_quantity",
+   "fieldtype": "Float",
+   "label": "Return Quantity",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "customer_credit_redeemed",
+   "fieldtype": "Currency",
+   "label": "Customer Credit Used",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "customer_credit_issued",
+   "fieldtype": "Currency",
+   "label": "Customer Credit Issued",
    "read_only": 1
   },
   {
