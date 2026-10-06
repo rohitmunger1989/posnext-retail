@@ -335,14 +335,32 @@
 					                                </div>
 
 					                                <div
-					                                        v-else
-					                                        class="flex justify-between gap-3 text-xs"
-					                                >
-					                                        <span class="text-gray-500">{{ __("Collected") }}</span>
-					                                        <strong class="text-gray-900">
-					                                                {{ formatCurrency(getSalesForPayment(payment)) }}
-					                                        </strong>
-					                                </div>
+										v-else
+										class="space-y-1.5 text-xs"
+									>
+										<div class="flex justify-between gap-3">
+											<span class="text-gray-500">{{ __("Opening") }}</span>
+											<strong class="text-gray-900">
+												{{ formatCurrency(payment.opening_amount) }}
+											</strong>
+										</div>
+
+										<div class="flex justify-between gap-3">
+											<span class="text-gray-500">{{ __("Collected") }}</span>
+											<strong class="text-gray-900">
+												{{ formatCurrency(getSalesForPayment(payment)) }}
+											</strong>
+										</div>
+
+										<div class="flex justify-between gap-3 pt-1.5 border-t border-gray-100">
+											<span class="font-medium text-gray-600">
+												{{ __("Expected") }}
+											</span>
+											<strong class="text-gray-900">
+												{{ formatCurrency(payment.expected_amount) }}
+											</strong>
+										</div>
+									</div>
 					                        </div>
 
 					                        <!-- Customer Credit is not a tender payment method -->
@@ -1598,18 +1616,14 @@ async function submitClosing() {
 			}
 		}
 
-		// If hideExpectedAmount is enabled, show success report before closing
-		if (hideExpectedAmount.value) {
-			showSuccessReport.value = true;
-			// Auto-expand invoice details in success report
-			if (invoiceCount.value > 0 && invoiceCount.value <= 10) {
-				showInvoiceDetails.value = true;
-			}
-		} else {
-			// Normal mode: close immediately
-			emit("shift-closed");
-			closeDialog();
-		}
+		// Shift is closed successfully.
+		// Always keep the final summary visible until the cashier clicks Close.
+		showSuccessReport.value = true;
+
+		// Keep Invoice Details collapsed unless the cashier opens it manually.
+		showInvoiceDetails.value = false;
+
+		showSuccess(__("Shift closed successfully"));
 	} catch (error) {
 		console.error("Error submitting closing shift:", error);
 		errorMessage.value = "Failed to close shift. Please verify all amounts and try again.";
@@ -1625,7 +1639,10 @@ async function retryEodPrint() {
 		await printEODReport(closingShiftName);
 		eodPrintFailed.value = null;
 		showSuccess(__("EOD report printed successfully"));
-		closeDialog();
+
+		// Keep the final shift summary open.
+		// Cashier will close it manually when finished.
+		showSuccessReport.value = true;
 	} catch (err) {
 		console.warn("[eod] retry print failed", err);
 		showWarning(__("EOD report did not print. Please check the configured print provider and retry."));
@@ -1635,16 +1652,21 @@ async function retryEodPrint() {
 }
 
 function closeDialog() {
-	// Emit shift-closed event if we're closing from success report
-	if (showSuccessReport.value) {
+	const shiftWasClosed = showSuccessReport.value;
+
+	// Close the dialog first so the UI cannot remain as an empty shell.
+	open.value = false;
+
+	// Notify the parent only after requesting the dialog to close.
+	if (shiftWasClosed) {
 		emit("shift-closed");
 	}
 
-	open.value = false;
+	// Reset local state after the close request.
 	closingData.value = null;
 	showInvoiceDetails.value = false;
-	showSuccessReport.value = false; // Reset report view
-	errorMessage.value = ""; // Clear error messages
+	showSuccessReport.value = false;
+	errorMessage.value = "";
 	eodPrintFailed.value = null;
 }
 
