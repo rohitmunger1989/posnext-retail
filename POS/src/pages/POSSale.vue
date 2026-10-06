@@ -1194,9 +1194,9 @@ function discardActiveCartRecovery(profile = shiftStore.profileName) {
 		window.clearTimeout(cartRecoveryVerificationTimer);
 		cartRecoveryVerificationTimer = null;
 	}
-	if (!profile || typeof sessionStorage === "undefined") return;
+	if (!profile || typeof localStorage === "undefined") return;
 	try {
-		sessionStorage.removeItem(cartRecoveryKey(profile));
+		localStorage.removeItem(cartRecoveryKey(profile));
 	} catch (error) {
 		log.warn("Could not discard active cart recovery:", error);
 	}
@@ -1208,7 +1208,7 @@ function saveActiveCartRecovery() {
 	// The cashier can add items before asynchronous POS bootstrap completes.
 	// Saving must not depend on restore initialization; only skip while the
 	// restore procedure itself is manipulating the cart.
-	if (cartRecoveryRestoring || typeof sessionStorage === "undefined") return;
+	if (cartRecoveryRestoring || typeof localStorage === "undefined") return;
 	const profile = shiftStore.profileName || cartStore.posProfile;
 	if (!profile) return;
 	try {
@@ -1226,7 +1226,7 @@ function saveActiveCartRecovery() {
 			customer: rawCustomer ? JSON.parse(JSON.stringify(rawCustomer)) : null,
 			additional_discount: Number(cartStore.additionalDiscount || 0),
 		};
-		sessionStorage.setItem(cartRecoveryKey(profile), JSON.stringify(snapshot));
+		localStorage.setItem(cartRecoveryKey(profile), JSON.stringify(snapshot));
 	} catch (error) {
 		// A silent quota/serialization failure previously looked like a successful save.
 		log.warn("Could not save active POS cart recovery:", error);
@@ -1234,12 +1234,12 @@ function saveActiveCartRecovery() {
 }
 
 async function restoreActiveCartRecovery(profile, { verify = false } = {}) {
-	if (!profile || typeof sessionStorage === "undefined" || cartRecoveryRestoring) return false;
+	if (!profile || typeof localStorage === "undefined" || cartRecoveryRestoring) return false;
 	if (cartRecoveryInitialized && !verify && cartRecoveryProfile === profile) return false;
 	cartRecoveryRestoring = true;
 	let restored = false;
 	try {
-		const raw = sessionStorage.getItem(cartRecoveryKey(profile));
+		const raw = localStorage.getItem(cartRecoveryKey(profile));
 		if (!raw) return false;
 		const snapshot = JSON.parse(raw);
 		const age = Date.now() - Number(snapshot?.saved_at || 0);
@@ -1247,7 +1247,7 @@ async function restoreActiveCartRecovery(profile, { verify = false } = {}) {
 			snapshot?.profile !== profile || age < 0 || age > 2 * 60 * 60 * 1000 ||
 			!Array.isArray(snapshot.items) || !snapshot.items.length
 		) {
-			sessionStorage.removeItem(cartRecoveryKey(profile));
+			localStorage.removeItem(cartRecoveryKey(profile));
 			return false;
 		}
 		// A populated cart represents a sale already in progress. Never overwrite
@@ -1286,14 +1286,14 @@ async function restoreActiveCartRecovery(profile, { verify = false } = {}) {
 // A second check after the UI and async shift/profile initialization settle
 // handles bootstraps that temporarily reset the cart after the first restore.
 // It never restores a deliberately cleared or completed sale, because those
-// paths synchronously delete the sessionStorage snapshot.
+// paths synchronously delete the localStorage snapshot.
 function verifyActiveCartRecoveryAfterInit(profile) {
 	if (cartRecoveryVerificationTimer) window.clearTimeout(cartRecoveryVerificationTimer);
 	cartRecoveryVerificationTimer = window.setTimeout(async () => {
 		cartRecoveryVerificationTimer = null;
 		if (shiftStore.profileName !== profile || cartStore.invoiceItems?.length) return;
 		try {
-			if (sessionStorage.getItem(cartRecoveryKey(profile))) {
+			if (localStorage.getItem(cartRecoveryKey(profile))) {
 				await restoreActiveCartRecovery(profile, { verify: true });
 			}
 		} catch (error) {
