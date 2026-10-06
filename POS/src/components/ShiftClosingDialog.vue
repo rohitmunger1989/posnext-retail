@@ -14,7 +14,12 @@
 					</p>
 				</div>
 
-				<div v-else-if="closingData" class="flex flex-col gap-3 md:gap-6">
+				<div
+					v-else-if="closingData"
+					ref="shiftCaptureArea"
+					data-shift-capture="true"
+					class="flex flex-col gap-3 md:gap-6"
+				>
 					<!-- Idle Warning -->
 					<div
 						v-if="showIdleWarning"
@@ -1193,6 +1198,17 @@
 						{{ __("EOD report pending print") }}
 					</div>
 
+					<!-- Download full shift summary -->
+					<Button
+						v-if="!showSuccessReport"
+						variant="subtle"
+						@click="downloadShiftScreenshot"
+						:loading="screenshotLoading"
+						:disabled="submitResource.loading || screenshotLoading"
+					>
+						{{ screenshotLoading ? __("Preparing...") : __("Download Summary") }}
+					</Button>
+
 					<!-- Submit/Close button (only shown in entry mode) -->
 					<Button
 						v-if="!showSuccessReport"
@@ -1200,7 +1216,7 @@
 						theme="blue"
 						@click="submitClosing"
 						:loading="submitResource.loading"
-						:disabled="!canSubmit"
+						:disabled="!canSubmit || screenshotLoading"
 					>
 						{{ submitResource.loading ? __("Closing Shift...") : __("Close Shift") }}
 					</Button>
@@ -1222,7 +1238,8 @@
 
 <script setup>
 import { Button, Dialog, FeatherIcon, Input } from "frappe-ui";
-import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
+import html2canvas from "html2canvas";
 import { storeToRefs } from "pinia";
 import { useShift, shiftState } from "../composables/useShift";
 import { useFormatters } from "../composables/useFormatters";
@@ -1268,6 +1285,8 @@ const errorMessage = ref(""); // User-friendly error message
 const eodPrintFailed = ref(null);
 const retryPrintLoading = ref(false);
 const showIdleWarning = ref(false);
+const shiftCaptureArea = ref(null);
+const screenshotLoading = ref(false);
 let _idleWarningTimer = null;
 
 // Watch dialog open state
@@ -1369,6 +1388,178 @@ const canSubmit = computed(() => {
 	);
 });
 
+function makeScreenshotFilename() {
+	const profile = String(closingData.value?.pos_profile || "POS")
+		.replace(/[^a-zA-Z0-9_-]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+
+	const now = new Date();
+	const pad = (value) => String(value).padStart(2, "0");
+
+	const stamp = [
+		now.getFullYear(),
+		pad(now.getMonth() + 1),
+		pad(now.getDate()),
+	].join("-") +
+		"_" +
+		[
+			pad(now.getHours()),
+			pad(now.getMinutes()),
+			pad(now.getSeconds()),
+		].join("");
+
+	return `POS-Close-Shift_${profile}_${stamp}.png`;
+}
+
+async function captureShiftScreenshot() {
+	const element = shiftCaptureArea.value;
+	if (!element) return null;
+
+	await nextTick();
+
+	if (document.fonts?.ready) {
+		await document.fonts.ready;
+	}
+
+	const liveInputValues = Array.from(element.querySelectorAll("input")).map(
+		(input) => input.value,
+	);
+
+	const exportWidth = 1800;
+	const exportScale = 4;
+
+	return await html2canvas(element, {
+		backgroundColor: "#ffffff",
+		scale: exportScale,
+		useCORS: true,
+		logging: false,
+		width: exportWidth,
+		windowWidth: exportWidth,
+		scrollX: 0,
+		scrollY: 0,
+		onclone(clonedDoc) {
+			const clonedElement = clonedDoc.querySelector('[data-shift-capture="true"]');
+			if (!clonedElement) return;
+
+			clonedElement.style.width = `${exportWidth}px`;
+			clonedElement.style.minWidth = `${exportWidth}px`;
+			clonedElement.style.maxWidth = `${exportWidth}px`;
+			clonedElement.style.height = "auto";
+			clonedElement.style.minHeight = "0";
+			clonedElement.style.maxHeight = "none";
+			clonedElement.style.overflow = "visible";
+			clonedElement.style.overflowY = "visible";
+			clonedElement.style.position = "relative";
+			clonedElement.style.transform = "none";
+			clonedElement.style.background = "#ffffff";
+
+			const style = clonedDoc.createElement("style");
+			style.textContent = `
+				[data-shift-capture="true"] * {
+					text-rendering: geometricPrecision !important;
+					-webkit-font-smoothing: antialiased !important;
+					box-sizing: border-box !important;
+				}
+
+				[data-shift-capture="true"] {
+					overflow: visible !important;
+				}
+
+				[data-shift-capture="true"] [class*="overflow-"] {
+					overflow: visible !important;
+				}
+
+				[data-shift-capture="true"] .text-xl,
+				[data-shift-capture="true"] .text-2xl,
+				[data-shift-capture="true"] .text-3xl,
+				[data-shift-capture="true"] [class*="leading-none"],
+				[data-shift-capture="true"] [class*="font-bold"],
+				[data-shift-capture="true"] [class*="font-semibold"] {
+					line-height: 1.4 !important;
+					padding-top: 6px !important;
+					padding-bottom: 6px !important;
+					overflow: visible !important;
+				}
+
+				[data-shift-capture="true"] input {
+					line-height: 1.35 !important;
+					min-height: 44px !important;
+					height: auto !important;
+					padding-top: 8px !important;
+					padding-bottom: 8px !important;
+					background: #ffffff !important;
+					color: #111827 !important;
+					opacity: 1 !important;
+				}
+
+				[data-shift-capture="true"] summary + * {
+					display: none !important;
+				}
+			`;
+			clonedDoc.head.appendChild(style);
+
+			Array.from(clonedDoc.querySelectorAll("input")).forEach((input, index) => {
+				const value = liveInputValues[index] ?? "";
+				input.value = value;
+				input.setAttribute("value", value);
+			});
+
+			Array.from(clonedDoc.querySelectorAll("details")).forEach((details) => {
+				details.open = false;
+				details.removeAttribute("open");
+			});
+		},
+	});
+}
+
+async function downloadShiftScreenshot(options = {}) {
+	if (!closingData.value || screenshotLoading.value) return false;
+
+	const { quiet = false } = options;
+
+	screenshotLoading.value = true;
+
+	try {
+		const canvas = await captureShiftScreenshot();
+
+		const blob = await new Promise((resolve, reject) => {
+			canvas.toBlob((value) => {
+				if (value) resolve(value);
+				else reject(new Error("Unable to create screenshot image"));
+			}, "image/png");
+		});
+
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+
+		link.href = url;
+		link.download = makeScreenshotFilename();
+		link.style.display = "none";
+
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+
+		setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+		if (!quiet) {
+			showSuccess(__("Close Shift summary downloaded"));
+		}
+
+		return true;
+	} catch (error) {
+		console.warn("[close-shift] screenshot download failed", error);
+
+		if (!quiet) {
+			showWarning(__("Unable to download the Close Shift summary."));
+		}
+
+		return false;
+	} finally {
+		screenshotLoading.value = false;
+	}
+}
+
 async function submitClosing() {
 	if (!closingData.value) return;
 
@@ -1380,6 +1571,15 @@ async function submitClosing() {
 			closingData.value.payment_reconciliation.forEach((payment) => {
 				calculateDifference(payment);
 			});
+		}
+
+		// Download a full Close Shift snapshot before the shift is submitted.
+		// Screenshot failure must never block the real shift closing process.
+		const screenshotDownloaded = await downloadShiftScreenshot({ quiet: true });
+		if (!screenshotDownloaded) {
+			showWarning(
+				__("Shift summary screenshot could not be downloaded. Closing the shift will continue.")
+			);
 		}
 
 		// Submit to server
