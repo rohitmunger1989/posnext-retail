@@ -2129,8 +2129,31 @@ def get_invoice(invoice_name):
 
 	# Get invoice document
 	invoice = frappe.get_doc("Sales Invoice", invoice_name)
+	invoice_data = invoice.as_dict()
 
-	return invoice.as_dict()
+	# Keep the original Sales Invoice Payment rows as the gross POS tender audit
+	# (important for Cash Received / Change), and also expose Payment Ledger history
+	# so later Payment Entries on partial invoices are visible in Invoice Details.
+	try:
+		from pos_next.api.partial_payments import get_payment_history
+
+		invoice_data["payment_history"] = get_payment_history(invoice_name, include_metadata=True)
+	except Exception:
+		# Invoice details must remain available even if payment-ledger enrichment fails.
+		frappe.log_error(
+			title="POS Invoice Payment History Load Failed",
+			message=frappe.get_traceback(),
+		)
+		invoice_data["payment_history"] = {
+			"payments": [],
+			"total_paid": flt(invoice.grand_total or 0) - flt(invoice.outstanding_amount or 0),
+			"outstanding": flt(invoice.outstanding_amount or 0),
+			"grand_total": flt(invoice.grand_total or 0),
+			"payment_count": 0,
+			"currency": invoice.currency,
+		}
+
+	return invoice_data
 
 
 @frappe.whitelist()

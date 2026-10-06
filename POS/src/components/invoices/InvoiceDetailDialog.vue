@@ -366,10 +366,9 @@
 					</div>
 				</div>
 
-				<!-- Totals Section -->
+				<!-- Payment History + Summary -->
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-					<!-- Payment Info -->
-					<div v-if="invoiceData.payments && invoiceData.payments.length > 0">
+					<div>
 						<h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center">
 							<svg
 								class="w-4 h-4 me-2"
@@ -384,37 +383,61 @@
 									d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
 								/>
 							</svg>
-							{{ __("Payments") }}
+							{{ __("Payment History") }}
 						</h4>
-						<div class="flex flex-col gap-2">
+
+						<div v-if="paymentHistoryRows.length > 0" class="flex flex-col gap-2">
 							<div
-								v-for="(payment, idx) in invoiceData.payments"
-								:key="idx"
+								v-for="(payment, idx) in paymentHistoryRows"
+								:key="payment.key || idx"
 								class="flex justify-between items-center p-3 bg-green-50 border border-green-200 rounded-lg"
 							>
-								<div class="text-start">
+								<div class="text-start min-w-0">
 									<div class="text-sm font-medium text-gray-900">
-										{{ payment.mode_of_payment }}
+										{{ payment.mode_of_payment || __("Payment") }}
 									</div>
-									<div v-if="payment.account" class="text-xs text-gray-500">
+									<div v-if="payment.account" class="text-xs text-gray-500 truncate">
 										{{ payment.account }}
 									</div>
+									<div v-if="payment.reference" class="text-xs text-gray-500">
+										{{ __("Reference:") }} {{ payment.reference }}
+									</div>
+									<div v-if="payment.posting_date" class="text-xs text-gray-500">
+										{{ formatDate(payment.posting_date) }}
+									</div>
 								</div>
-								<div class="text-sm font-semibold text-green-700">
+								<div class="text-sm font-semibold text-green-700 flex-shrink-0">
 									{{ formatCurrency(payment.amount) }}
 								</div>
 							</div>
+
+							<div
+								v-if="paymentChangeAmount > 0"
+								class="flex justify-between items-center p-3 bg-blue-50 border border-blue-200 rounded-lg"
+							>
+								<div class="text-start">
+									<div class="text-sm font-medium text-blue-900">{{ __("Change Given") }}</div>
+									<div class="text-xs text-blue-600">{{ __("Returned to customer") }}</div>
+								</div>
+								<div class="text-sm font-semibold text-blue-700">
+									-{{ formatCurrency(paymentChangeAmount) }}
+								</div>
+							</div>
+						</div>
+
+						<div
+							v-else
+							class="p-3 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg"
+						>
+							{{ __("No payment records") }}
 						</div>
 					</div>
 
-					<!-- Summary -->
 					<div>
 						<h4 class="text-sm font-semibold text-gray-700 mb-3 text-start">
-							{{ __("Summary") }}
+							{{ __("Payment Summary") }}
 						</h4>
-						<div
-							class="flex flex-col gap-2 bg-gray-50 p-4 rounded-lg border border-gray-200"
-						>
+						<div class="flex flex-col gap-2 bg-gray-50 p-4 rounded-lg border border-gray-200">
 							<div class="flex justify-between text-sm">
 								<span class="text-gray-600">{{ __("Net Total:") }}</span>
 								<span class="font-medium text-gray-900">{{
@@ -435,28 +458,37 @@
 								class="flex justify-between text-sm"
 							>
 								<span class="text-gray-600">{{ __("Discount:") }}</span>
-								<span class="font-medium text-red-600"
-									>-{{ formatCurrency(invoiceData.discount_amount) }}</span
-								>
+								<span class="font-medium text-red-600">-{{ formatCurrency(invoiceData.discount_amount) }}</span>
 							</div>
+
 							<div class="pt-2 border-t border-gray-300 flex justify-between">
-								<span class="font-semibold text-gray-900">{{
-									__("Grand Total:")
-								}}</span>
+								<span class="font-semibold text-gray-900">{{ __("Grand Total:") }}</span>
 								<span class="font-bold text-lg text-indigo-600">{{
 									formatCurrency(invoiceData.grand_total)
 								}}</span>
 							</div>
-							<div
-								v-if="invoiceData.paid_amount"
-								class="flex justify-between text-sm"
-							>
-								<span class="text-gray-600">{{ __("Paid Amount:") }}</span>
+
+							<div v-if="grossTenderedAmount > 0" class="flex justify-between text-sm">
+								<span class="text-gray-600">{{ __("Tendered / Paid:") }}</span>
 								<span class="font-semibold text-green-600">{{
-									formatCurrency(invoiceData.paid_amount)
+									formatCurrency(grossTenderedAmount)
 								}}</span>
 							</div>
-							<!-- For return invoices with negative outstanding (credit to customer) -->
+
+							<div v-if="paymentChangeAmount > 0" class="flex justify-between text-sm">
+								<span class="text-gray-600">{{ __("Change:") }}</span>
+								<span class="font-semibold text-blue-600">{{
+									formatCurrency(paymentChangeAmount)
+								}}</span>
+							</div>
+
+							<div v-if="netSettledAmount > 0" class="flex justify-between text-sm">
+								<span class="text-gray-600">{{ __("Net Settled:") }}</span>
+								<span class="font-semibold text-gray-900">{{
+									formatCurrency(netSettledAmount)
+								}}</span>
+							</div>
+
 							<div
 								v-if="invoiceData.is_return && invoiceData.outstanding_amount < 0"
 								class="flex justify-between text-sm"
@@ -466,12 +498,9 @@
 									formatCurrency(Math.abs(invoiceData.outstanding_amount))
 								}}</span>
 							</div>
-							<!-- For regular invoices with outstanding (customer owes) -->
+
 							<div
-								v-else-if="
-									invoiceData.outstanding_amount &&
-									invoiceData.outstanding_amount > 0
-								"
+								v-else-if="Number(invoiceData.outstanding_amount || 0) > 0.000001"
 								class="flex justify-between text-sm"
 							>
 								<span class="text-gray-600">{{ __("Outstanding:") }}</span>
@@ -636,6 +665,53 @@ const isCashRefund = computed(() => {
 		String(payment.mode_of_payment || "").toLowerCase().includes("cash")
 	);
 });
+
+// Original POS tender rows are authoritative for gross tender / change audit.
+// Payment Ledger adds any later Payment Entry settlements on partial invoices.
+const paymentHistoryRows = computed(() => {
+	if (!invoiceData.value) return [];
+
+	const rows = [];
+	const originalPayments = Array.isArray(invoiceData.value.payments)
+		? invoiceData.value.payments
+		: [];
+
+	originalPayments
+		.filter((payment) => Math.abs(Number(payment?.amount || 0)) > 0.000001)
+		.forEach((payment, idx) => {
+			rows.push({
+				...payment,
+				key: `pos-${idx}-${payment.mode_of_payment || "payment"}`,
+				amount: Number(payment.amount || 0),
+			});
+		});
+
+	const ledgerRows = invoiceData.value.payment_history?.payments || [];
+	ledgerRows
+		.filter((payment) => payment?.voucher_type === "Payment Entry")
+		.forEach((payment, idx) => {
+			rows.push({
+				...payment,
+				key: `pe-${payment.voucher_no || idx}`,
+				amount: Number(payment.amount || 0),
+				reference: payment.reference || payment.payment_entry || payment.voucher_no || null,
+			});
+		});
+
+	return rows;
+});
+
+const paymentChangeAmount = computed(() =>
+	Math.max(0, Number(invoiceData.value?.change_amount || 0))
+);
+
+const grossTenderedAmount = computed(() =>
+	paymentHistoryRows.value.reduce((sum, payment) => sum + Math.abs(Number(payment.amount || 0)), 0)
+);
+
+const netSettledAmount = computed(() =>
+	Math.max(0, grossTenderedAmount.value - paymentChangeAmount.value)
+);
 
 watch(
 	() => props.modelValue,
