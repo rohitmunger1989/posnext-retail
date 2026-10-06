@@ -117,6 +117,25 @@
 								<div class="text-green-600 text-xs">{{ __("After returns") }}</div>
 							</div>
 
+							<!-- Total Sold Quantity -->
+							<div
+							        class="text-start bg-cyan-50 border border-cyan-200 rounded-lg p-3 md:p-4"
+							>
+							        <div class="text-cyan-600 text-xs uppercase font-medium mb-1">
+							                {{ __("Total Sold Qty") }}
+							        </div>
+							        <div
+							                class="text-lg md:text-2xl font-bold text-cyan-900 mb-0.5 md:mb-1 truncate"
+							        >
+							                {{ formatQuantity(soldQuantity) }}
+							        </div>
+							        <div class="text-cyan-700 text-xs">
+							                {{ __("Returns") }}: {{ formatQuantity(returnQuantity) }}
+							                <span class="mx-1">•</span>
+							                {{ __("Net Qty") }}: {{ formatQuantity(netSoldQuantity) }}
+							        </div>
+							</div>
+
 							<!-- Collected (money actually taken this shift) -->
 							<div
 								class="text-start bg-emerald-50 border border-emerald-200 rounded-lg p-3 md:p-4"
@@ -229,6 +248,120 @@
 								</p>
 							</div>
 						</div>
+					</div>
+
+					<!-- Payment Method Summary -->
+					<div
+					        v-if="shouldShowSummary"
+					        class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+					>
+					        <div class="px-3 py-3 md:px-6 md:py-4 bg-gray-50 border-b border-gray-200">
+					                <h3 class="text-sm md:text-lg font-semibold text-gray-900">
+					                        {{ __("Payment Method Summary") }}
+					                </h3>
+					        </div>
+
+					        <div class="p-3 md:p-4">
+					                <div
+					                        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3"
+					                >
+					                        <div
+					                                v-for="(payment, idx) in closingData.payment_reconciliation"
+					                                :key="`payment-summary-${idx}`"
+					                                class="text-start border border-gray-200 rounded-lg p-3 bg-white"
+					                        >
+					                                <div class="flex items-center gap-2 mb-2">
+					                                        <div
+					                                                :class="[
+					                                                        'rounded-lg p-1.5',
+					                                                        getPaymentIcon(payment.mode_of_payment).color,
+					                                                ]"
+					                                        >
+					                                                <span class="text-base">
+					                                                        {{ getPaymentIcon(payment.mode_of_payment).icon }}
+					                                                </span>
+					                                        </div>
+
+					                                        <div class="text-sm font-semibold text-gray-900">
+					                                                {{ payment.mode_of_payment }}
+					                                        </div>
+					                                </div>
+
+					                                <div
+					                                        v-if="isCashPaymentMethod(payment.mode_of_payment)"
+					                                        class="space-y-1.5 text-xs"
+					                                >
+					                                        <div class="flex justify-between gap-3">
+					                                                <span class="text-gray-500">{{ __("Opening") }}</span>
+					                                                <strong class="text-gray-900">
+					                                                        {{ formatCurrency(payment.opening_amount) }}
+					                                                </strong>
+					                                        </div>
+
+					                                        <div class="flex justify-between gap-3">
+					                                                <span class="text-gray-500">
+					                                                        {{ __("Net Cash Sales") }}
+					                                                </span>
+					                                                <strong class="text-gray-900">
+					                                                        {{ formatCurrency(getSalesForPayment(payment)) }}
+					                                                </strong>
+					                                        </div>
+
+					                                        <div
+					                                                class="flex justify-between gap-3 pt-1.5 border-t border-gray-100"
+					                                        >
+					                                                <span class="font-medium text-gray-600">
+					                                                        {{ __("Expected") }}
+					                                                </span>
+					                                                <strong class="text-gray-900">
+					                                                        {{ formatCurrency(payment.expected_amount) }}
+					                                                </strong>
+					                                        </div>
+					                                </div>
+
+					                                <div
+					                                        v-else-if="isUsagePaymentMethod(payment.mode_of_payment)"
+					                                        class="flex justify-between gap-3 text-xs"
+					                                >
+					                                        <span class="text-gray-500">{{ __("Used") }}</span>
+					                                        <strong class="text-gray-900">
+					                                                {{ formatCurrency(getSalesForPayment(payment)) }}
+					                                        </strong>
+					                                </div>
+
+					                                <div
+					                                        v-else
+					                                        class="flex justify-between gap-3 text-xs"
+					                                >
+					                                        <span class="text-gray-500">{{ __("Collected") }}</span>
+					                                        <strong class="text-gray-900">
+					                                                {{ formatCurrency(getSalesForPayment(payment)) }}
+					                                        </strong>
+					                                </div>
+					                        </div>
+
+					                        <!-- Customer Credit is not a tender payment method -->
+					                        <div
+					                                class="text-start border border-violet-200 rounded-lg p-3 bg-violet-50"
+					                        >
+					                                <div class="flex items-center gap-2 mb-2">
+					                                        <div class="rounded-lg p-1.5 bg-violet-500">
+					                                                <span class="text-base">💳</span>
+					                                        </div>
+					                                        <div class="text-sm font-semibold text-violet-900">
+					                                                {{ __("Customer Credit") }}
+					                                        </div>
+					                                </div>
+
+					                                <div class="flex justify-between gap-3 text-xs">
+					                                        <span class="text-violet-600">{{ __("Used") }}</span>
+					                                        <strong class="text-violet-900">
+					                                                {{ formatCurrency(customerCreditRedeemed) }}
+					                                        </strong>
+					                                </div>
+					                        </div>
+					                </div>
+					        </div>
 					</div>
 
 					<!-- Invoice Details (Collapsible) (hidden in entry mode when hideExpectedAmount is enabled) -->
@@ -1363,6 +1496,25 @@ const grossSales = computed(() => {
 	return closingData.value.sales_total ?? closingData.value.grand_total ?? 0;
 });
 
+const soldQuantity = computed(() => {
+        if (!closingData.value) return 0;
+        return Number(closingData.value.sales_quantity || 0);
+});
+
+const returnQuantity = computed(() => {
+        if (!closingData.value) return 0;
+        return Number(closingData.value.returns_quantity || 0);
+});
+
+const netSoldQuantity = computed(() => {
+        if (!closingData.value) return 0;
+        return Number(
+                closingData.value.total_quantity ??
+                        soldQuantity.value - returnQuantity.value
+        );
+});
+
+
 // Sum a cash-basis field off the invoice rows.  The header fields are dropped
 // from as_dict() until `bench migrate` adds them to the doctype, so between
 // deploy and migrate the rows are the only source — and they always carry it.
@@ -1417,6 +1569,19 @@ const getTotalActual = computed(() => {
 const getTotalDifference = computed(() => {
 	return getTotalActual.value - getTotalExpected.value;
 });
+
+function isCashPaymentMethod(modeOfPayment) {
+        return String(modeOfPayment || "").trim().toLowerCase() === "cash";
+}
+
+function isUsagePaymentMethod(modeOfPayment) {
+        const mode = String(modeOfPayment || "").trim().toLowerCase();
+
+        return (
+                mode.includes("wallet") ||
+                mode.includes("loyalty")
+        );
+}
 
 function getSalesForPayment(payment) {
 	return (

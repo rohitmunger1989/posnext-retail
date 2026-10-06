@@ -544,9 +544,11 @@ def _process_invoice(invoice, invoice_field, company_currency, cash_mode, paymen
 	summary["customer_credit_redeemed"] += credit_redeemed
 
 	if is_return:
+		summary["returns_quantity"] += abs(flt(invoice.total_qty))
 		summary["returns_total"] += abs(base_grand_total)
 		summary["returns_count"] += 1
 	else:
+		summary["sales_quantity"] += abs(flt(invoice.total_qty))
 		summary["sales_total"] += base_grand_total
 		summary["sales_count"] += 1
 
@@ -607,6 +609,8 @@ def make_closing_shift_from_opening(opening_shift):
 		"grand_total": 0,
 		"net_total": 0,
 		"total_quantity": 0,
+		"sales_quantity": 0,
+		"returns_quantity": 0,
 		"returns_total": 0,
 		"returns_count": 0,
 		"sales_total": 0,
@@ -698,6 +702,8 @@ def make_closing_shift_from_opening(opening_shift):
 			"returns_count": summary["returns_count"],
 			"sales_total": summary["sales_total"],
 			"sales_count": summary["sales_count"],
+			"sales_quantity": summary["sales_quantity"],
+			"returns_quantity": summary["returns_quantity"],
 			"customer_credit_issued": summary["customer_credit_issued"],
 			"customer_credit_redeemed": summary["customer_credit_redeemed"],
 			"pos_transactions": pos_transactions,  # Include return/settlement info for display
