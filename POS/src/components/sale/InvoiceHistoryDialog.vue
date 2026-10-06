@@ -84,9 +84,20 @@
 										formatDateTime(invoice.posting_date, invoice.posting_time)
 									}}
 								</p>
-								<p class="text-xs text-gray-500 text-start">
-									{{ formatPaymentModes(invoice) }}
-								</p>
+								<p class="text-xs text-start flex flex-wrap items-center gap-x-1">
+	<template
+		v-for="(payment, paymentIndex) in getPaymentModeEntries(invoice)"
+		:key="`${invoice.name}-payment-${paymentIndex}-${payment.mode_of_payment}`"
+	>
+		<span :class="getPaymentModeTextClass(payment.mode_of_payment)">
+			{{ payment.label }}
+		</span>
+		<span
+			v-if="paymentIndex < getPaymentModeEntries(invoice).length - 1"
+			class="text-gray-400"
+		>,</span>
+	</template>
+</p>
 							</div>
 
 							<!-- Amount & Actions (End Side) -->
@@ -354,23 +365,73 @@ function formatDateTime(date, time) {
 	return [dateStr, timeStr].filter(Boolean).join(" ");
 }
 
-function formatPaymentModes(invoice) {
+function getPaymentModeEntries(invoice) {
 	const payments = Array.isArray(invoice?.payments) ? invoice.payments : []
 	const validPayments = payments.filter((payment) => payment.mode_of_payment)
 
 	if (validPayments.length === 0) {
-		return __("No payment mode")
+		return [{ mode_of_payment: "", label: __("No payment mode") }]
 	}
 
 	if (validPayments.length === 1) {
-		return __(validPayments[0].mode_of_payment)
+		return [
+			{
+				mode_of_payment: validPayments[0].mode_of_payment,
+				label: __(validPayments[0].mode_of_payment),
+			},
+		]
 	}
 
-	return validPayments
-		.map(
-			(payment) =>
-				`${__(payment.mode_of_payment)} ${formatCurrency(Number.parseFloat(payment.amount || 0))}`,
-		)
-		.join(", ")
+	return validPayments.map((payment) => ({
+		mode_of_payment: payment.mode_of_payment,
+		label: `${__(payment.mode_of_payment)} ${formatCurrency(Number.parseFloat(payment.amount || 0))}`,
+	}))
+}
+
+function getPaymentModeTextClass(modeOfPayment) {
+	const value = String(modeOfPayment || "").trim().toLowerCase()
+
+	if (!value) return "text-gray-500"
+
+	if (value.includes("cash"))
+		return "text-emerald-700 font-semibold"
+
+	if (value.includes("k-net") || value.includes("knet"))
+		return "text-blue-700 font-semibold"
+
+	if (value.includes("tap"))
+		return "text-cyan-700 font-semibold"
+
+	if (
+		value.includes("my fatoora") ||
+		value.includes("myfatoora") ||
+		value.includes("my fatoorah")
+	)
+		return "text-indigo-700 font-semibold"
+
+	if (value.includes("loyalty") || value.includes("wallet"))
+		return "text-amber-700 font-semibold"
+
+	if (
+		value.includes("customer credit") ||
+		value.includes("credit balance")
+	)
+		return "text-violet-700 font-semibold"
+
+	const palette = [
+		"text-rose-700 font-semibold",
+		"text-teal-700 font-semibold",
+		"text-fuchsia-700 font-semibold",
+		"text-sky-700 font-semibold",
+		"text-orange-700 font-semibold",
+		"text-lime-700 font-semibold",
+	]
+
+	const hash = [...value].reduce(
+		(total, char) => total + char.charCodeAt(0),
+		0
+	)
+
+	return palette[hash % palette.length]
 }
 </script>
