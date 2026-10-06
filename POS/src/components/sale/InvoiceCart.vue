@@ -695,7 +695,10 @@
 		</div>
 
 		<!-- Cart Items -->
-		<div class="flex-1 overflow-y-auto p-0.5 sm:p-1.5 bg-gray-50">
+		<div
+                        ref="cartItemsScroll"
+                        class="flex-1 overflow-y-auto p-0.5 sm:p-1.5 bg-gray-50"
+                >
 			<div
 				v-if="items.length === 0"
 				class="flex flex-col items-center justify-center h-full px-3 sm:px-4 py-4"
@@ -1219,6 +1222,7 @@
 			<div v-else class="flex flex-col gap-0.5 sm:gap-1">
 				<div
 					v-for="(item, index) in sortedItems"
+                                        :ref="(el) => setCartScanRowRef(item, el)"
 					:key="
 						item.item_code +
 						'-' +
@@ -1226,6 +1230,16 @@
 						(item.is_free_item ? '-free' : '')
 					"
 					@click="item.is_free_item ? null : openEditDialog(item)"
+                                        :style="
+                                                highlightedCartScanKey === cartScanRowKey(item)
+                                                        ? {
+                                                                backgroundColor: '#ecfdf5',
+                                                                borderColor: '#34d399',
+                                                                boxShadow:
+                                                                        'inset 4px 0 0 #10b981, 0 0 0 1px rgba(16,185,129,.20)',
+                                                          }
+                                                        : undefined
+                                        "
 					:class="[
 						'border rounded-md p-1.5 sm:p-2 transition-all duration-200',
 						item.is_free_item
@@ -1937,6 +1951,115 @@ const {
 	getCartSortLabel,
 	getCartSortIconState,
 } = useCartSort(() => props.items);
+
+// ---------------------------------------------------------------------------
+// Retail cart scan feedback
+// Scroll the cart to the item whose quantity changed and highlight it briefly.
+// UI only — does not modify payment, checkout, offline, or recovery state.
+// ---------------------------------------------------------------------------
+const cartItemsScroll = ref(null);
+const cartScanRowRefs = new Map();
+const highlightedCartScanKey = ref("");
+let cartScanHighlightTimer = null;
+
+function cartScanRowKey(item) {
+        return [
+                item?.item_code || "",
+                item?.uom || "",
+                item?.is_free_item ? "free" : "normal",
+        ].join("::");
+}
+
+function setCartScanRowRef(item, el) {
+        const key = cartScanRowKey(item);
+
+        if (el) {
+                cartScanRowRefs.set(key, el);
+        } else {
+                cartScanRowRefs.delete(key);
+        }
+}
+
+async function revealCartScanItem(item) {
+        if (!item) return;
+
+        const key = cartScanRowKey(item);
+
+        highlightedCartScanKey.value = key;
+
+        await nextTick();
+
+        const row = cartScanRowRefs.get(key);
+
+        if (row) {
+                row.scrollIntoView({
+                        behavior: "smooth",
+                        block: "nearest",
+                        inline: "nearest",
+                });
+        }
+
+        clearTimeout(cartScanHighlightTimer);
+
+        cartScanHighlightTimer = setTimeout(() => {
+                if (highlightedCartScanKey.value === key) {
+                        highlightedCartScanKey.value = "";
+                }
+        }, 1200);
+}
+
+watch(
+        () =>
+                props.items.map((item) => ({
+                        key: cartScanRowKey(item),
+                        quantity: Number(item?.quantity || 0),
+                })),
+        (currentRows, previousRows = []) => {
+                if (!Array.isArray(currentRows) || currentRows.length === 0) {
+                        return;
+                }
+
+                const previous = new Map(
+                        (previousRows || []).map((row) => [
+                                row.key,
+                                Number(row.quantity || 0),
+                        ]),
+                );
+
+                let changedKey = "";
+
+                // Newly scanned item created a new cart row.
+                for (const row of currentRows) {
+                        if (!previous.has(row.key)) {
+                                changedKey = row.key;
+                        }
+                }
+
+                // Re-scanning an existing item changed its quantity in place.
+                if (!changedKey) {
+                        for (const row of currentRows) {
+                                if (
+                                        previous.has(row.key) &&
+                                        previous.get(row.key) !== Number(row.quantity || 0)
+                                ) {
+                                        changedKey = row.key;
+                                        break;
+                                }
+                        }
+                }
+
+                if (!changedKey) return;
+
+                const changedItem = props.items.find(
+                        (item) => cartScanRowKey(item) === changedKey,
+                );
+
+                if (changedItem) {
+                        revealCartScanItem(changedItem);
+                }
+        },
+);
+
 
 /**
  * ============================================================================
@@ -3234,6 +3357,7 @@ onMounted(() => {
  * Prevents memory leaks by removing event listener.
  */
 onBeforeUnmount(() => {
+        clearTimeout(cartScanHighlightTimer);
 	if (typeof document === "undefined") return;
 	document.removeEventListener("mousedown", handleOutsideClick);
 });

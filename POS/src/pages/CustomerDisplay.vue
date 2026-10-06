@@ -108,7 +108,7 @@
 								<div
 									v-for="(item, index) in displayState.items"
 									:key="`${item.item_code || item.item_name}-${index}`"
-									:class="['cart-line', 'pos-cart-line', { latest: index === (displayState.latest_item_index ?? displayState.items.length - 1) }]"
+									:class="['cart-line', 'pos-cart-line', { latest: index === highlightedCartIndex }]"
 								>
 									<div class="cart-line-item">
 										<img v-if="visible('product_image') && item.image" :src="item.image" class="cart-line-image" alt="" />
@@ -195,7 +195,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, onUnmounted, ref } from "vue";
+import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import { resolveTerminalIdentity } from "@/utils/terminalIdentity";
@@ -207,6 +207,8 @@ const settingsStore = usePOSSettingsStore();
 const profile = computed(() => String(route.query.profile || "").trim());
 const terminalId = ref(String(route.query.terminal || "").trim());
 const displayState = ref(null);
+const highlightedCartIndex = ref(-1);
+let cartHighlightTimer = null;
 const connected = ref(false);
 const now = ref(new Date());
 // Display-only viewport tracking. The cashier and normalized display payload are unchanged.
@@ -315,10 +317,44 @@ function markLive() {
 	clearTimeout(staleTimer);
 	staleTimer = setTimeout(() => (connected.value = false), 15000);
 }
-function applyState(payload) {
-	if (!payload || typeof payload !== "object") return;
-	displayState.value = payload;
-	markLive();
+async function applyState(payload) {
+    if (!payload || typeof payload !== "object") return;
+
+    displayState.value = payload;
+    markLive();
+
+    const latestIndex = Number(payload.latest_item_index);
+    const quantityDelta = Number(payload.latest_quantity_delta || 0);
+
+    if (
+            quantityDelta !== 0 &&
+            Number.isInteger(latestIndex) &&
+            latestIndex >= 0
+    ) {
+            highlightedCartIndex.value = latestIndex;
+
+            await nextTick();
+
+            const rows = document.querySelectorAll(
+                    ".cart-history-scroll .cart-line"
+            );
+
+            const row = rows[latestIndex];
+
+            if (row) {
+                    row.scrollIntoView({
+                            behavior: "smooth",
+                            block: "nearest",
+                            inline: "nearest",
+                    });
+            }
+
+            clearTimeout(cartHighlightTimer);
+
+            cartHighlightTimer = setTimeout(() => {
+                    highlightedCartIndex.value = -1;
+            }, 1200);
+    }
 }
 function readSnapshot() {
 	try {
@@ -406,6 +442,10 @@ const PaymentSummary = defineComponent({
 			]);
 		};
 	},
+});
+
+onUnmounted(() => {
+        clearTimeout(cartHighlightTimer);
 });
 
 onMounted(async () => {
