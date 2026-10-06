@@ -13,18 +13,29 @@
 				:class="[
 					'pos-payment-dialog-marker grid grid-cols-1 lg:grid-cols-5 items-stretch',
 					dynamicGap,
-					isMobileView ? '' : 'overflow-hidden',
+					isMobileView
+                                                ? 'overflow-y-auto overscroll-contain'
+                                                : 'overflow-y-auto overscroll-contain',
 				]"
-				:style="isMobileView ? {} : { maxHeight: dialogContentMaxHeight }"
+				:style="
+                                        isMobileView
+                                                ? {
+                                                        maxHeight: 'calc(100dvh - 9rem)',
+                                                        WebkitOverflowScrolling: 'touch',
+                                                  }
+                                                : { maxHeight: dialogContentMaxHeight }
+                                "
 			>
 				<!-- Left Column (2/5): Sales Person + Invoice Summary -->
 				<div
 					:class="[
 						'lg:col-span-2 flex flex-col min-h-0',
 						isSmallMobile ? 'gap-1' : 'gap-1.5',
-						isMobileView ? 'overflow-visible' : 'overflow-hidden',
+						isMobileView
+                                                        ? 'overflow-visible'
+                                                        : 'overflow-visible',
 					]"
-					:style="{ maxHeight: isMobileView ? 'none' : dynamicLeftColumnHeight }"
+					:style="{ maxHeight: 'none' }"
 				>
 					<!-- Delivery Date for Sales Orders -->
 					<div
