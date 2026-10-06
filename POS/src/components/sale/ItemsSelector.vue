@@ -4,9 +4,35 @@
 		<div
 			class="px-1.5 sm:px-3 pt-1.5 sm:pt-3 pb-1.5 sm:pb-2 bg-white border-b border-gray-200"
 		>
-			<div
-				class="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x snap-mandatory"
-			>
+			<div class="flex items-center gap-1">
+					<button
+						type="button"
+						title="Previous item groups"
+						aria-label="Scroll item groups left"
+						@mousedown.prevent
+						@click="scrollFilterTabs(-1)"
+						class="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-600 active:bg-gray-100 flex items-center justify-center"
+					>
+						<svg
+							class="w-4 h-4"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M15 19l-7-7 7-7"
+							/>
+						</svg>
+					</button>
+
+					<div
+						ref="filterTabsContainer"
+						@wheel="handleFilterTabsWheel"
+						class="flex-1 min-w-0 flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x snap-mandatory scroll-smooth"
+					>
 				<button
 					@click="handleAllFilterClick"
 					:class="[
@@ -45,7 +71,31 @@
 					<span>{{ __(option.label) }}</span>
 				</button>
 			</div>
-		</div>
+
+					<button
+						type="button"
+						title="Next item groups"
+						aria-label="Scroll item groups right"
+						@mousedown.prevent
+						@click="scrollFilterTabs(1)"
+						class="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-600 active:bg-gray-100 flex items-center justify-center"
+					>
+						<svg
+							class="w-4 h-4"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M9 5l7 7-7 7"
+							/>
+						</svg>
+					</button>
+				</div>
+			</div>
 
 		<!-- Cache Sync Indicator -->
 		<div v-if="cacheSyncing" class="px-1.5 sm:px-3 py-1 bg-blue-50 border-b border-blue-200">
@@ -1224,6 +1274,46 @@ const activeFilterOptions = computed(() =>
 		: (itemGroups.value || []).map((g) => ({ value: g.item_group, label: g.item_group }))
 );
 const selectedFilterLabel = computed(() => selectedBrand.value || selectedItemGroup.value || null);
+
+// Horizontal navigation for Item Group / Brand filter tabs
+const filterTabsContainer = ref(null);
+
+function scrollFilterTabs(direction) {
+	const container = filterTabsContainer.value;
+	if (!container) return;
+
+	const distance = Math.max(
+		180,
+		Math.round(container.clientWidth * 0.7)
+	);
+
+	container.scrollBy({
+		left: direction * distance,
+		behavior: "smooth",
+	});
+}
+
+function handleFilterTabsWheel(event) {
+	const container = filterTabsContainer.value;
+	if (!container) return;
+
+	// Leave normal page scrolling alone when the tabs do not overflow.
+	if (container.scrollWidth <= container.clientWidth) return;
+
+	const delta =
+		Math.abs(event.deltaX) > Math.abs(event.deltaY)
+			? event.deltaX
+			: event.deltaY;
+
+	if (!delta) return;
+
+	event.preventDefault();
+
+	container.scrollBy({
+		left: delta,
+		behavior: "auto",
+	});
+}
 
 // Watch for cart items and pos profile changes (optimized - uses length + hash instead of deep watch)
 // Tracks: length, item_code, quantity, and amount to detect all cart changes including array replacements
