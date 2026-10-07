@@ -2163,7 +2163,7 @@ def get_invoices(pos_profile: str, search=None, limit: int = 20, offset=0, from_
 
 	Args:
 		pos_profile: POS Profile name
-		search: Optional search term matched against invoice name or customer_name
+		search: Optional search term matched against invoice name, customer name/ID, or mobile number
 		limit: Page size (default 20)
 		offset: Number of records to skip for pagination (default 0)
 		from_date: Optional start date filter (YYYY-MM-DD)
@@ -2208,7 +2208,7 @@ def get_invoices(pos_profile: str, search=None, limit: int = 20, offset=0, from_
 
 	if search:
 		conditions.append(
-			"(name LIKE %(search)s OR customer_name LIKE %(search)s OR customer LIKE %(search)s)"
+			"(name LIKE %(search)s OR customer_name LIKE %(search)s OR customer LIKE %(search)s OR contact_mobile LIKE %(search)s)"
 		)
 		params["search"] = f"%{cstr(search)}%"
 
@@ -2230,6 +2230,7 @@ def get_invoices(pos_profile: str, search=None, limit: int = 20, offset=0, from_
 			name,
 			customer,
 			customer_name,
+			contact_mobile,
 			posting_date,
 			posting_time,
 			grand_total,

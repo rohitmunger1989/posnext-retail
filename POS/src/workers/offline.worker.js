@@ -420,6 +420,35 @@ async function saveOfflineInvoice(invoiceData) {
 		if (!invoiceData.items || invoiceData.items.length === 0) {
 			throw new Error("Cannot save empty invoice");
 		}
+			// OFFLINE_INVOICE_ITEM_VALIDATION
+			// Validate only offline sale payloads before they enter the persistent queue.
+			// The normal online submission path is not changed.
+			for (let index = 0; index < invoiceData.items.length; index++) {
+			        const item = invoiceData.items[index] || {};
+			        const itemCode = String(item.item_code || "").trim();
+			        const qty = Number(item.qty ?? item.quantity ?? 0);
+
+			        if (!itemCode) {
+			                throw new Error(
+			                        `Offline invoice item ${index + 1} is missing item_code`
+			                );
+			        }
+
+			        if (!Number.isFinite(qty) || qty <= 0) {
+			                throw new Error(
+			                        `Offline invoice item ${itemCode} has invalid quantity`
+			                );
+			        }
+
+			        const cachedItem = await db.table("items").get(itemCode);
+
+			        if (!cachedItem) {
+			                throw new Error(
+			                        `Offline invoice item not found in cache: ${itemCode}`
+			                );
+			        }
+			}
+
 
 		// Generate unique offline_id for deduplication
 		const offlineId = generateOfflineId();
@@ -488,6 +517,39 @@ function shouldShowItem(item) {
 	if (item.disabled) return false;
 	if (showVariantsAsItems) return !item.has_variants;
 	return !item.variant_of;
+}
+
+/**
+ * Find one cached item by barcode.
+ *
+ * Uses the multi-entry `barcodes` IndexedDB index populated by extractBarcodes().
+ * Falls back to exact item_code because some retailers use item_code itself
+ * as the scannable barcode.
+ */
+async function getCachedItemByBarcode(barcode) {
+        const value = String(barcode || "").trim();
+        if (!value) return null;
+
+        try {
+                const db = await initDB();
+
+                let item = await db
+                        .table("items")
+                        .where("barcodes")
+                        .equals(value)
+                        .first();
+
+                if (item) return item;
+
+                item = await db.table("items").get(value);
+                return item || null;
+        } catch (error) {
+                log.error("Cached barcode lookup failed", {
+                        barcode: value,
+                        error: error?.message || error,
+                });
+                return null;
+        }
 }
 
 /**
@@ -1719,6 +1781,10 @@ self.onmessage = async (event) => {
 			case "SAVE_INVOICE":
 				result = await saveOfflineInvoice(payload.invoiceData);
 				break;
+
+			case "GET_ITEM_BY_BARCODE":
+			        result = await getCachedItemByBarcode(payload.barcode);
+			        break;
 
 			case "SEARCH_ITEMS":
 				result = await searchCachedItems(

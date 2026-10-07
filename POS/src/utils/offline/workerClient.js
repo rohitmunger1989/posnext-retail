@@ -364,6 +364,8 @@ class OfflineWorkerClient {
 			case "GET_INVOICE_COUNT":
 				return 0;
 			case "GET_INVOICES":
+			case "GET_ITEM_BY_BARCODE":
+			        return null;
 			case "SEARCH_ITEMS":
 			case "SEARCH_ITEMS_BY_GROUP":
 			case "SEARCH_ITEMS_BY_BRAND":
@@ -423,6 +425,10 @@ class OfflineWorkerClient {
 
 	async saveOfflineInvoice(invoiceData) {
 		return this.sendMessage("SAVE_INVOICE", { invoiceData });
+	}
+
+	async getItemByBarcode(barcode) {
+	        return this.sendMessage("GET_ITEM_BY_BARCODE", { barcode });
 	}
 
 	async searchCachedItems(searchTerm = "", limit = 50, offset = 0) {

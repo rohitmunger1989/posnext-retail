@@ -10,6 +10,7 @@ import { shiftState } from "@/composables/useShift";
 // pos_performance_tier, pos_next_language, pos_next_schema_*, pos_next_cache_*)
 // are intentionally NOT cleared.
 const USER_KEYS = [
+	"pos_offline_session_user",
 	"pos_session_lock",
 	"pos_session_pwd_hash",
 	"pos_lock_attempts",

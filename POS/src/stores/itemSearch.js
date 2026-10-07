@@ -1829,6 +1829,22 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 				throw new Error("POS Profile not set");
 			}
 
+			// Offline scans use IndexedDB only; online path remains unchanged.
+			if (isOffline()) {
+			        const cachedItem = await offlineWorker.getItemByBarcode(barcode);
+
+			        if (cachedItem) {
+			                log.debug("Offline barcode found in cache", {
+			                        barcode,
+			                        item_code: cachedItem.item_code,
+			                });
+			                return cachedItem;
+			        }
+
+			        log.debug("Offline barcode not found in cache", { barcode });
+			        return null;
+			}
+
 			log.debug("Calling searchByBarcode API", { posProfile: posProfile.value });
 
 			const result = await searchByBarcodeResource.submit({
@@ -2304,6 +2320,12 @@ export const useItemSearchStore = defineStore("itemSearch", () => {
 			profileItemGroups.value = [];
 			itemGroups.value = [];
 			brands.value = [];
+
+			// Cached items may still exist even if POS Profile metadata
+			// cannot be fetched or restored during offline startup.
+			if (autoLoadItems) {
+			        loadAllItems(profile);
+			}
 		}
 	}
 

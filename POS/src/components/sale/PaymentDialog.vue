@@ -2560,10 +2560,27 @@ const salesPersonsResource = createResource({
 		}
 	},
 	onError(error) {
-		log.error("[PaymentDialog] Error loading sales persons:", error);
-		salesPersons.value = [];
-		loadingSalesPersons.value = false;
-	},
+                log.error("[PaymentDialog] Error loading sales persons:", error);
+
+                offlineWorker
+                        .getCachedSalesPersons(props.posProfile)
+                        .then((cached) => {
+                                salesPersons.value = Array.isArray(cached) ? cached : [];
+                                log.info(
+                                        `[PaymentDialog] Loaded ${salesPersons.value.length} cached sales persons`
+                                );
+                        })
+                        .catch((cacheError) => {
+                                log.error(
+                                        "[PaymentDialog] Failed to load cached sales persons:",
+                                        cacheError
+                                );
+                                salesPersons.value = [];
+                        })
+                        .finally(() => {
+                                loadingSalesPersons.value = false;
+                        });
+        }
 });
 
 // Computed: Available sales persons (exclude already selected, filter by search)

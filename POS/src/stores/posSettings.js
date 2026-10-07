@@ -19,6 +19,45 @@ function settingEnabled(value, fallback = false) {
 	return Boolean(value);
 }
 
+const POS_SETTINGS_CACHE_PREFIX = "pos_next_pos_settings_v1:";
+
+function getSettingsCacheKey(posProfile) {
+        return `${POS_SETTINGS_CACHE_PREFIX}${posProfile}`;
+}
+
+function saveCachedSettings(posProfile, data) {
+        if (!posProfile || !data) return;
+
+        try {
+                localStorage.setItem(
+                        getSettingsCacheKey(posProfile),
+                        JSON.stringify({
+                                pos_profile: posProfile,
+                                settings: data,
+                                cached_at: Date.now(),
+                        })
+                );
+        } catch {
+                // Ignore storage errors; online operation must continue normally.
+        }
+}
+
+function loadCachedSettings(posProfile) {
+        if (!posProfile) return null;
+
+        try {
+                const raw = localStorage.getItem(getSettingsCacheKey(posProfile));
+                if (!raw) return null;
+
+                const parsed = JSON.parse(raw);
+                return parsed?.settings && typeof parsed.settings === "object"
+                        ? parsed.settings
+                        : null;
+        } catch {
+                return null;
+        }
+}
+
 export const usePOSSettingsStore = defineStore("posSettings", () => {
 	// State
 	const settings = ref({
@@ -295,6 +334,10 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		onSuccess(data) {
 			if (data) {
 				Object.assign(settings.value, data);
+				const profile = settings.value.pos_profile;
+				if (profile) {
+				        saveCachedSettings(profile, settings.value);
+				}
 				isLoaded.value = true;
 			}
 			isLoading.value = false;
@@ -313,12 +356,23 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		isLoading.value = true;
 		settings.value.pos_profile = posProfile;
 
+		// Restore cached POS settings before bootstrap/API so offline startup
+		// keeps the correct feature flags and worker configuration.
+		const cachedSettings = loadCachedSettings(posProfile);
+		if (cachedSettings) {
+		        Object.assign(settings.value, cachedSettings);
+		        settings.value.pos_profile = posProfile;
+		        isLoaded.value = true;
+		}
+
 		// OPTIMIZATION: Check if bootstrap has preloaded the settings
 		try {
 			const bootstrapStore = useBootstrapStore();
 			const preloadedSettings = bootstrapStore.getPreloadedPOSSettings();
 			if (preloadedSettings && Object.keys(preloadedSettings).length > 0) {
 				Object.assign(settings.value, preloadedSettings);
+				settings.value.pos_profile = posProfile;
+				saveCachedSettings(posProfile, settings.value);
 				isLoaded.value = true;
 				isLoading.value = false;
 				return true;

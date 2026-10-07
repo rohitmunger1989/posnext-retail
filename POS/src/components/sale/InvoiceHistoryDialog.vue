@@ -3,12 +3,12 @@
 		<template #body-content>
 			<div class="flex flex-col gap-4">
 				<!-- Filters -->
-				<div class="flex items-center gap-2">
+				<form class="flex items-center gap-2" @submit.prevent="onSearchEnter">
 					<div class="flex-1">
 						<Input
 							v-model="searchTerm"
 							type="text"
-							:placeholder="__('Search by invoice number or customer...')"
+							:placeholder="__('Search by invoice, customer, or mobile...')"
 							@input="onSearchInput"
 						>
 							<template #prefix>
@@ -19,6 +19,7 @@
 						</Input>
 					</div>
 					<Button
+                                                type="button"
 						variant="subtle"
 						@click="loadInvoices"
 						:loading="invoicesResource.loading && !isLoadingMore"
@@ -29,7 +30,7 @@
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
 						</svg>
 					</Button>
-				</div>
+				</form>
 
 				<!-- Invoices List -->
 				<div v-if="invoicesResource.loading" class="text-center py-8">
@@ -178,6 +179,7 @@ import { useFormatters } from "@/composables/useFormatters"
 import { useToast } from "@/composables/useToast"
 import { DEFAULT_CURRENCY, DEFAULT_LOCALE, formatCurrency as formatCurrencyUtil } from "@/utils/currency"
 import { getInvoiceStatusColor } from "@/utils/invoice"
+import { cacheInvoiceHistory, getCachedInvoiceHistory, isOffline } from "@/utils/offline/sync"
 import { Button, Dialog, Input, createResource } from "frappe-ui"
 import { computed, ref, watch } from "vue"
 import ReturnInvoiceDialog from "./ReturnInvoiceDialog.vue"
@@ -223,42 +225,90 @@ const isLoadingMore = ref(false)
 
 // Create resource for loading invoices
 const invoicesResource = createResource({
-	url: "pos_next.api.invoices.get_invoices",
-	makeParams() {
-		return {
-			pos_profile: props.posProfile,
-			search: searchTerm.value || undefined,
-			limit: pageSize,
-			offset: page.value * pageSize,
-		}
-	},
-	auto: false,
-	onSuccess(data) {
-		if (data && Array.isArray(data)) {
-			const newInvoices = data.map((inv) => ({
-				...inv,
-				items_count: 0,
-			}))
+        url: "pos_next.api.invoices.get_invoices",
+        makeParams() {
+                return {
+                        pos_profile: props.posProfile,
+                        search: searchTerm.value || undefined,
+                        limit: pageSize,
+                        offset: page.value * pageSize,
+                }
+        },
+        auto: false,
+        async onSuccess(data) {
+                if (data && Array.isArray(data)) {
+                        const newInvoices = data.map((inv) => ({
+                                ...inv,
+                                items_count: 0,
+                        }))
 
-			if (isLoadingMore.value) {
-				// Append to existing list
-				invoices.value = [...invoices.value, ...newInvoices]
-			} else {
-				// Replace the list
-				invoices.value = newInvoices
-			}
+                        if (isLoadingMore.value) {
+                                // Append to existing list
+                                invoices.value = [...invoices.value, ...newInvoices]
+                        } else {
+                                // Replace the list
+                                invoices.value = newInvoices
+                        }
 
-			// Check if there are more results
-			hasMore.value = data.length === pageSize
-			isLoadingMore.value = false
-		}
-		isLoadingMore.value = false
-	},
-	onError(error) {
-		console.error("Error loading invoices:", error)
-		showError(__("Failed to load invoices"))
-		isLoadingMore.value = false
-	},
+                        // Refresh offline cache with server results.
+                        if (data.length > 0 && props.posProfile) {
+                                try {
+                                        await cacheInvoiceHistory(data, props.posProfile)
+                                } catch (error) {
+                                        console.warn("Failed to cache invoice history:", error)
+                                }
+                        }
+
+                        // Check if there are more results
+                        hasMore.value = data.length === pageSize
+                }
+
+                isLoadingMore.value = false
+        },
+        async onError(error) {
+                console.error("Error loading invoices:", error)
+
+                try {
+                        const cached = await getCachedInvoiceHistory(props.posProfile, {
+                                limit: 1000,
+                        })
+
+                        const term = String(searchTerm.value || "").trim().toLowerCase()
+                        const matching = term
+                                ? (cached || []).filter((inv) => invoiceMatchesSearch(inv, term))
+                                : (cached || [])
+
+                        if (matching.length > 0) {
+                                const pageStart = page.value * pageSize
+                                const cachedPage = matching.slice(pageStart, pageStart + pageSize)
+
+                                if (isLoadingMore.value) {
+                                        invoices.value = [
+                                                ...invoices.value,
+                                                ...cachedPage.map((inv) => ({
+                                                        ...inv,
+                                                        items_count: inv.items_count || 0,
+                                                })),
+                                        ]
+                                } else {
+                                        invoices.value = cachedPage.map((inv) => ({
+                                                ...inv,
+                                                items_count: inv.items_count || 0,
+                                        }))
+                                }
+
+                                hasMore.value = matching.length > pageStart + cachedPage.length
+                                isLoadingMore.value = false
+                                return
+                        }
+                } catch (cacheError) {
+                        console.error("Error loading cached invoice fallback:", cacheError)
+                }
+
+                showError(__("Failed to load invoices"))
+                hasMore.value = false
+                isLoadingMore.value = false
+        },
 });
 
 watch(
@@ -289,46 +339,133 @@ watch(showReturnDialog, (val) => {
 	}
 })
 
-const filteredInvoices = computed(() => {
-	if (!searchTerm.value) return invoices.value
+function invoiceMatchesSearch(inv, rawTerm = searchTerm.value) {
+        const term = String(rawTerm || "").trim().toLowerCase()
 
-	const term = searchTerm.value.toLowerCase()
-	return invoices.value.filter(
-		(inv) =>
-			inv.name.toLowerCase().includes(term) ||
-			inv.customer_name?.toLowerCase().includes(term),
-	)
-})
+        if (!term) return true
 
-function loadInvoices() {
-	if (props.posProfile) {
-		// Reset to first page for fresh load
-		page.value = 0
-		isLoadingMore.value = false
-		invoicesResource.reload()
-	}
+        return (
+                String(inv?.name || "").toLowerCase().includes(term) ||
+                String(inv?.customer_name || "").toLowerCase().includes(term) ||
+                String(inv?.customer || "").toLowerCase().includes(term) ||
+                String(inv?.contact_mobile || "").toLowerCase().includes(term)
+        )
 }
 
-function loadMore() {
-	page.value++
-	isLoadingMore.value = true
-	invoicesResource.reload()
+const filteredInvoices = computed(() => {
+        if (!searchTerm.value) return invoices.value
+        return invoices.value.filter((inv) => invoiceMatchesSearch(inv))
+})
+
+async function loadInvoices() {
+        if (!props.posProfile) return
+
+        page.value = 0
+        isLoadingMore.value = false
+
+        // Offline: search/filter IndexedDB history locally before pagination.
+        if (isOffline()) {
+                try {
+                        const cached = await getCachedInvoiceHistory(props.posProfile, {
+                                limit: 1000,
+                        })
+
+                        const term = String(searchTerm.value || "").trim().toLowerCase()
+
+                        const matching = term
+                                ? (cached || []).filter((inv) => invoiceMatchesSearch(inv, term))
+                                : (cached || [])
+
+                        const firstPage = matching.slice(0, pageSize)
+
+                        invoices.value = firstPage.map((inv) => ({
+                                ...inv,
+                                items_count: inv.items_count || 0,
+                        }))
+
+                        hasMore.value = matching.length > pageSize
+                } catch (error) {
+                        console.error("Error loading cached invoices:", error)
+                        invoices.value = []
+                        hasMore.value = false
+                        showError(__("Failed to load cached invoices"))
+                }
+                return
+        }
+
+        // Online path remains server-first.
+        invoicesResource.reload()
+}
+
+async function loadMore() {
+        page.value++
+        isLoadingMore.value = true
+
+        if (isOffline()) {
+                try {
+                        const cached = await getCachedInvoiceHistory(props.posProfile, {
+                                limit: 1000,
+                        })
+
+                        const term = String(searchTerm.value || "").trim().toLowerCase()
+
+                        const matching = term
+                                ? (cached || []).filter((inv) => invoiceMatchesSearch(inv, term))
+                                : (cached || [])
+
+                        const pageStart = page.value * pageSize
+                        const nextPage = matching.slice(pageStart, pageStart + pageSize)
+
+                        invoices.value = [
+                                ...invoices.value,
+                                ...nextPage.map((inv) => ({
+                                        ...inv,
+                                        items_count: inv.items_count || 0,
+                                })),
+                        ]
+
+                        hasMore.value = matching.length > pageStart + nextPage.length
+                } catch (error) {
+                        console.error("Error loading more cached invoices:", error)
+                        showError(__("Failed to load more cached invoices"))
+                        hasMore.value = false
+                } finally {
+                        isLoadingMore.value = false
+                }
+                return
+        }
+
+        // Online path remains unchanged.
+        invoicesResource.reload()
 }
 
 function debounce(fn, wait) {
-	let timer
-	return (...args) => {
-		clearTimeout(timer)
-		timer = setTimeout(() => fn(...args), wait)
-	}
+    let timer
+
+    const debounced = (...args) => {
+            clearTimeout(timer)
+            timer = setTimeout(() => fn(...args), wait)
+    }
+
+    debounced.cancel = () => {
+            clearTimeout(timer)
+            timer = null
+    }
+
+    return debounced
 }
 
 const _debouncedSearch = debounce(() => {
-	loadInvoices()
+    loadInvoices()
 }, 300)
 
 function onSearchInput() {
-	_debouncedSearch()
+    _debouncedSearch()
+}
+
+function onSearchEnter() {
+    _debouncedSearch.cancel()
+    loadInvoices()
 }
 
 function viewInvoice(invoice) {

@@ -280,6 +280,38 @@ const stringifyPricingRules = (value) => {
 };
 
 /**
+ * OFFLINE_SYNC_ITEM_VALIDATION
+ * Validate queued invoice items before normalization/server submission.
+ * This protects legacy or malformed offline queue records.
+ */
+const validateOfflineInvoiceForSync = (invoiceData, offlineId = null) => {
+        const items = invoiceData?.items;
+
+        if (!Array.isArray(items) || items.length === 0) {
+                throw new Error(
+                        `Offline invoice ${offlineId || "unknown"} has no items`
+                );
+        }
+
+        items.forEach((item, index) => {
+                const itemCode = String(item?.item_code || "").trim();
+                const qty = Number(item?.qty ?? item?.quantity ?? 0);
+
+                if (!itemCode) {
+                        throw new Error(
+                                `Offline invoice ${offlineId || "unknown"} item ${index + 1} is missing item_code`
+                        );
+                }
+
+                if (!Number.isFinite(qty) || qty <= 0) {
+                        throw new Error(
+                                `Offline invoice ${offlineId || "unknown"} item ${itemCode} has invalid quantity`
+                        );
+                }
+        });
+};
+
+/**
  * Normalize invoice data for server sync.
  * Items should already be formatted by formatItemsForSubmission() when saved.
  * This provides a safety net for legacy data.
@@ -321,6 +353,9 @@ const syncInvoiceToServer = async (invoice, retryCount = 0) => {
 	}
 
 	// Prepare and submit
+	// Validate original queued data before normalization.
+	validateOfflineInvoiceForSync(invoice.data, offlineId);
+
 	const invoiceData = normalizeInvoiceForSync(invoice.data, offlineId);
 
 	try {

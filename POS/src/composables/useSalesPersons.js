@@ -7,6 +7,7 @@ import { ref, computed } from "vue";
 import { createResource } from "frappe-ui";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import { logger } from "@/utils/logger";
+import { offlineWorker } from "@/utils/offline/workerClient";
 
 const log = logger.create("useSalesPersons");
 
@@ -35,10 +36,27 @@ export function useSalesPersons(posProfile) {
 			loadingSalesPersons.value = false;
 		},
 		onError(error) {
-			log.error("Error loading sales persons:", error);
-			salesPersons.value = [];
-			loadingSalesPersons.value = false;
-		},
+                        log.error("Error loading sales persons:", error);
+
+                        offlineWorker
+                                .getCachedSalesPersons(posProfile.value)
+                                .then((cached) => {
+                                        salesPersons.value = Array.isArray(cached) ? cached : [];
+                                        log.info(
+                                                `Loaded ${salesPersons.value.length} cached sales persons`
+                                        );
+                                })
+                                .catch((cacheError) => {
+                                        log.error(
+                                                "Failed to load cached sales persons:",
+                                                cacheError
+                                        );
+                                        salesPersons.value = [];
+                                })
+                                .finally(() => {
+                                        loadingSalesPersons.value = false;
+                                });
+                },
 	});
 
 	// Computed: Available sales persons (exclude already selected, filter by search)

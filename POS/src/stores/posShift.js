@@ -81,9 +81,19 @@ export const usePOSShiftStore = defineStore("posShift", () => {
 	}
 
 	async function checkShift() {
-		await checkOpeningShift.fetch();
-		return hasOpenShift.value;
-	}
+                try {
+                        await checkOpeningShift.fetch();
+                } catch (error) {
+                        // checkOpeningShift.onError restores cached shift data
+                        // from localStorage during offline startup.
+                        console.warn(
+                                "Opening shift server check failed; using cached shift if available:",
+                                error
+                        );
+                }
+
+                return hasOpenShift.value;
+        }
 
 	return {
 		// State
