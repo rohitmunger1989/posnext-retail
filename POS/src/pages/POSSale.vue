@@ -589,6 +589,7 @@
 
 			<!-- Shift Opening Dialog -->
 			<ShiftOpeningDialog
+                                v-if="uiStore.showOpenShiftDialog"
 				v-model="uiStore.showOpenShiftDialog"
 				@shift-opened="handleShiftOpened"
 				@update:modelValue="handleQuickActionDialogVisibility"
@@ -1084,7 +1085,6 @@ let _posInitPromise = null;
 
 <script setup>
 import ShiftClosingDialog from "@/components/ShiftClosingDialog.vue";
-import ShiftOpeningDialog from "@/components/ShiftOpeningDialog.vue";
 import ClearCacheOverlay from "@/components/common/ClearCacheOverlay.vue";
 import SessionLockScreen from "@/components/common/SessionLockScreen.vue";
 import LoadingSpinner from "@/components/common/LoadingSpinner.vue";
@@ -1145,7 +1145,7 @@ import { tryAutomaticCashDrawerOpen } from "@/utils/cashDrawerAuto";
 
 import { Button, Dialog, createResource } from "frappe-ui";
 import { call } from "@/utils/apiWrapper";
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useToast } from "@/composables/useToast";
 
 import { useCustomerSearchStore } from "@/stores/customerSearch";
@@ -1162,6 +1162,8 @@ import { usePOSUIStore } from "@/stores/posUI";
 import { useBootstrapStore } from "@/stores/bootstrap";
 import { logger } from "@/utils/logger";
 import { shouldValidateItemStock } from "@/utils/stockValidator";
+
+const ShiftOpeningDialog = defineAsyncComponent(() => import("@/components/ShiftOpeningDialog.vue"));
 
 // Initialize stores
 const cartStore = usePOSCartStore();
