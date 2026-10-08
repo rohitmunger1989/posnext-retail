@@ -2261,7 +2261,7 @@ async function handleShiftOpened() {
 	await restoreActiveCartRecovery(shiftStore.profileName);
 	verifyActiveCartRecoveryAfterInit(shiftStore.profileName);
 
-	_initializedProfile = shiftStore.profileName;
+	_initializedKey = `${shiftStore.profileName}::${shiftStore.currentShift?.name}`;
 
 	// Start session lock tracking now that a shift is open and POS is ready
 	startActivityTracking();
