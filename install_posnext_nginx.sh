@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 
 SW_LOCATION='location = /assets/pos_next/pos/sw.js'
+POS_LOCATION='location = /pos/'
 
 log() {
     echo "[POSNext Nginx] $*"
@@ -35,8 +36,8 @@ log "Nginx config: ${NGINX_CONF}"
 #
 # Already installed: do not modify anything.
 #
-if grep -Fq "${SW_LOCATION}" "${NGINX_CONF}"; then
-    log "POSNext Service Worker configuration already installed."
+if grep -Fq "${SW_LOCATION}" "${NGINX_CONF}" && grep -Fq "${POS_LOCATION}" "${NGINX_CONF}"; then
+    log "POSNext Nginx configuration already installed."
 
     if nginx -t; then
         log "Nginx configuration is valid."
@@ -77,11 +78,6 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 text = path.read_text()
-
-if "location = /assets/pos_next/pos/sw.js" in text:
-    print("POSNext Service Worker block already exists.")
-    raise SystemExit(0)
-
 lines = text.splitlines(keepends=True)
 
 insert_at = None
@@ -96,25 +92,49 @@ for index, line in enumerate(lines):
 if insert_at is None:
     raise SystemExit('Could not locate "location /assets {"')
 
-block = (
-    f'{indent}location = /assets/pos_next/pos/sw.js {{\n'
-    f'{indent}\ttry_files $uri =404;\n'
-    f'{indent}\tadd_header Cache-Control "no-cache, no-store, must-revalidate";\n'
-    f'{indent}\tadd_header Service-Worker-Allowed "/pos" always;\n'
-    f'{indent}}}\n\n'
-)
+webserver_try_files = None
 
-lines.insert(insert_at, block)
-path.write_text("".join(lines))
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("try_files ") and stripped.endswith("@webserver;"):
+        webserver_try_files = stripped
+        break
 
-print("POSNext Service Worker block inserted.")
+if webserver_try_files is None:
+    raise SystemExit('Could not locate Bench "try_files ... @webserver;" rule')
+
+blocks = []
+
+if "location = /pos/" not in text:
+    blocks.append(
+        f'{indent}location = /pos/ {{\n'
+        f'{indent}\t{webserver_try_files}\n'
+        f'{indent}}}\n\n'
+    )
+
+if "location = /assets/pos_next/pos/sw.js" not in text:
+    blocks.append(
+        f'{indent}location = /assets/pos_next/pos/sw.js {{\n'
+        f'{indent}\ttry_files $uri =404;\n'
+        f'{indent}\tadd_header Cache-Control "no-cache, no-store, must-revalidate";\n'
+        f'{indent}\tadd_header Service-Worker-Allowed "/pos" always;\n'
+        f'{indent}}}\n\n'
+    )
+
+if blocks:
+    lines.insert(insert_at, "".join(blocks))
+    path.write_text("".join(lines))
+    print("POSNext Nginx configuration updated.")
+else:
+    print("POSNext Nginx configuration already complete.")
+
 PY
 then
     restore_backup
     fail "Could not update the Bench Nginx configuration."
 fi
 
-log "POSNext Service Worker configuration added."
+log "POSNext Nginx configuration added."
 
 #
 # Never reload an invalid configuration.
@@ -150,5 +170,5 @@ else
 fi
 
 log "Nginx reloaded successfully."
-log "POSNext Service Worker is allowed to control /pos."
+log "POSNext Service Worker and /pos/ route configuration installed."
 log "Installation complete."
