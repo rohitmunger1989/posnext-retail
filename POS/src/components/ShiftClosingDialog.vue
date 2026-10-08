@@ -56,6 +56,15 @@
 									{{ formatDateTime(closingData.period_start_date) }}
 								</p>
 							</div>
+                                                        <div class="text-start sm:text-center min-w-[140px]">
+                                                                <div class="text-xs text-gray-500 uppercase">
+                                                                        {{ __("Cashier") }}
+                                                                </div>
+                                                                <div class="text-base md:text-lg font-semibold text-gray-900">
+                                                                        {{ closingData.user || __("N/A") }}
+                                                                </div>
+                                                        </div>
+
 							<div class="text-start sm:text-end">
 								<div class="text-start text-xs text-gray-500 uppercase">
 									{{ __("Duration") }}
