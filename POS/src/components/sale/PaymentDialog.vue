@@ -3138,28 +3138,21 @@ function isQuickAmountDisabled(amount) {
 	return Number(amount || 0) > maxNonCash + 0.001;
 }
 
-// Preload payment methods and sales persons when posProfile is set.
-// Watches both posProfile AND enableSalesPersons to fix a race condition:
-// posProfile is available immediately (from shiftStore), but POS settings
-// load asynchronously (from bootstrap/API). When settings load after the
-// posProfile watcher fires, enableSalesPersons is still "Disabled" (default)
-// and the sales persons fetch gets skipped entirely. By watching both
-// dependencies, the fetch triggers as soon as both conditions are met,
-// regardless of which resolves first.
+// Load payment methods and sales persons when the Payment dialog opens.
+// Also watch enableSalesPersons because POS settings may load after the dialog opens.
+// This avoids unnecessary payment-related API calls during initial POS startup.
 watch(
-	() => [props.posProfile, settingsStore.enableSalesPersons],
-	([newProfile, salesPersonsEnabled]) => {
-		if (!newProfile) return;
+        () => [props.modelValue, props.posProfile, settingsStore.enableSalesPersons],
+        ([isOpen, newProfile, salesPersonsEnabled]) => {
+                if (!isOpen || !newProfile) return;
 
-		// Payment methods have their own internal loading guard
-		loadPaymentMethods();
+                loadPaymentMethods();
 
-		// Fetch sales persons only when: feature is enabled, not already loaded, and not in-flight
-		if (salesPersonsEnabled && salesPersons.value.length === 0 && !loadingSalesPersons.value) {
-			refreshSalesPersons();
-		}
-	},
-	{ immediate: true }
+                if (salesPersonsEnabled && salesPersons.value.length === 0 && !loadingSalesPersons.value) {
+                        refreshSalesPersons();
+                }
+        },
+        { immediate: true }
 );
 
 // Pre-fetch customer balance when customer changes (before dialog opens)

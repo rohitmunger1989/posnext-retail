@@ -105,6 +105,7 @@ export function translate(msg: string, replace?: Record<string, string>, ctx?: s
   const messages = window.translatedMessages || {}
   const key = ctx ? `${msg}:${ctx}` : msg
   let translated = messages[key] || messages[msg] || msg
+  void translationVersion.value
 
   if (replace) {
     translated = translated.replace(/{(\d+)}/g, (_, n) => replace[n] ?? _)

@@ -202,6 +202,12 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 			return;
 		}
 
+                // Deduplicate concurrent component loads; manual force refresh is still allowed.
+                if (!forceReload && loading.value) {
+                        log.debug("Customer load already in progress, skipping duplicate");
+                        return;
+                }
+
 		loading.value = true;
 		try {
 			// Step 1: Load from IndexedDB cache (instant display)

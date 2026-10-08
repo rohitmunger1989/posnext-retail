@@ -1466,6 +1466,11 @@ const exchangeCreditSource = ref(null);
 const paymentHubCartReference = ref(null);
 const paymentHubCartFingerprint = ref(null);
 let paymentHubPollTimer = null;
+let paymentHubConfigPromise = null;
+let paymentHubQueueCountsPromise = null;
+let paymentHubConfigLoadedProfile = null;
+let paymentHubQueueCountsLastKey = null;
+let paymentHubQueueCountsLastAt = 0;
 
 // Debounce timer for offer reapplication
 const offerReapplyTimer = ref(null);
@@ -2644,34 +2649,96 @@ async function finalizePaymentHubCustomerCredit(invoiceName, cartReference = nul
 }
 
 async function loadPaymentHubConfig() {
-	if (offlineStore.isOffline || !shiftStore.profileName) return;
-	try {
-		const result = await call(
-			"erpnext_payment_hub.pos.api.get_pos_payment_config",
-			{ pos_profile: shiftStore.profileName },
-		);
-		paymentHubConfig.value = unwrapPaymentHubResult(result);
-	} catch (error) {
-		paymentHubConfig.value = null;
-		log.debug("Payment Hub config unavailable:", error?.message || error);
-	}
+        if (offlineStore.isOffline || !shiftStore.profileName) return;
+
+        const profileName = shiftStore.profileName;
+        if (paymentHubConfigLoadedProfile === profileName) {
+                return paymentHubConfig.value;
+        }
+        if (paymentHubConfigPromise?.key === profileName) {
+                return paymentHubConfigPromise.promise;
+        }
+
+        const promise = (async () => {
+                try {
+                        const result = await call(
+                                "erpnext_payment_hub.pos.api.get_pos_payment_config",
+                                { pos_profile: profileName },
+                        );
+                        const config = unwrapPaymentHubResult(result);
+                        if (shiftStore.profileName === profileName) {
+                                paymentHubConfig.value = config;
+                                paymentHubConfigLoadedProfile = profileName;
+                        }
+                        return config;
+                } catch (error) {
+                        if (shiftStore.profileName === profileName) {
+                                paymentHubConfig.value = null;
+                        }
+                        log.debug("Payment Hub config unavailable:", error?.message || error);
+                        return null;
+                }
+        })();
+
+        paymentHubConfigPromise = { key: profileName, promise };
+        try {
+                return await promise;
+        } finally {
+                if (paymentHubConfigPromise?.promise === promise) {
+                        paymentHubConfigPromise = null;
+                }
+        }
 }
 
 async function refreshPaymentHubQueueCounts() {
-	if (!paymentHubConfig.value || offlineStore.isOffline || !shiftStore.profileName) return;
-	try {
-		const result = await call(
-			"erpnext_payment_hub.pos.api.get_sales_queue_counts",
-			{
-				pos_profile: shiftStore.profileName,
-				current_pos_profile: shiftStore.profileName,
-				pos_opening_shift: shiftStore.currentShift?.name || null,
-			},
-		);
-		paymentHubQueueCounts.value = unwrapPaymentHubResult(result) || { waiting: 0, paid: 0, failed: 0 };
-	} catch (error) {
-		log.debug("Payment Hub queue count refresh failed:", error?.message || error);
-	}
+        if (!paymentHubConfig.value || offlineStore.isOffline || !shiftStore.profileName) return;
+
+        const profileName = shiftStore.profileName;
+        const openingShift = shiftStore.currentShift?.name || null;
+        const requestKey = `${profileName}:${openingShift || ""}`;
+        const now = Date.now();
+        if (paymentHubQueueCountsLastKey === requestKey && now - paymentHubQueueCountsLastAt < 2000) {
+                return paymentHubQueueCounts.value;
+        }
+
+        if (paymentHubQueueCountsPromise?.key === requestKey) {
+                return paymentHubQueueCountsPromise.promise;
+        }
+
+        const promise = (async () => {
+                try {
+                        const result = await call(
+                                "erpnext_payment_hub.pos.api.get_sales_queue_counts",
+                                {
+                                        pos_profile: profileName,
+                                        current_pos_profile: profileName,
+                                        pos_opening_shift: openingShift,
+                                },
+                        );
+                        const counts = unwrapPaymentHubResult(result) || { waiting: 0, paid: 0, failed: 0 };
+                        if (
+                                shiftStore.profileName === profileName &&
+                                (shiftStore.currentShift?.name || null) === openingShift
+                        ) {
+                                paymentHubQueueCounts.value = counts;
+                                paymentHubQueueCountsLastKey = requestKey;
+                                paymentHubQueueCountsLastAt = Date.now();
+                        }
+                        return counts;
+                } catch (error) {
+                        log.debug("Payment Hub queue count refresh failed:", error?.message || error);
+                        return null;
+                }
+        })();
+
+        paymentHubQueueCountsPromise = { key: requestKey, promise };
+        try {
+                return await promise;
+        } finally {
+                if (paymentHubQueueCountsPromise?.promise === promise) {
+                        paymentHubQueueCountsPromise = null;
+                }
+        }
 }
 
 function handlePaymentHubCountsUpdated(counts) {
