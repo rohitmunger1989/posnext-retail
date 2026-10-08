@@ -111,9 +111,25 @@ export default defineConfig({
 			workbox: {
 				globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
 				maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 3 MB
-				navigateFallback: "index.html",
-				navigateFallbackDenylist: [/^\/api/, /^\/app/],
+                                navigateFallback: null,
 				runtimeCaching: [
+                                        {
+                                                urlPattern: ({ request, url }) =>
+                                                        request.mode === "navigate" &&
+                                                        (url.pathname === "/pos" || url.pathname === "/pos/"),
+                                                handler: "NetworkFirst",
+                                                options: {
+                                                        cacheName: "pos-navigation-cache",
+                                                        networkTimeoutSeconds: 5,
+                                                        expiration: {
+                                                                maxEntries: 2,
+                                                                maxAgeSeconds: 60 * 60 * 24,
+                                                        },
+                                                        cacheableResponse: {
+                                                                statuses: [0, 200],
+                                                        },
+                                                },
+                                        },
 					{
 						urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
 						handler: "CacheFirst",

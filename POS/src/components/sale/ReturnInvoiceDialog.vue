@@ -1822,11 +1822,7 @@ const createReturnResource = createResource({
 
 // Lifecycle hooks
 onMounted(() => {
-	if (props.posProfile) {
-		loadPaymentMethodsResource.reload();
-		returnSecurityOptionsResource.fetch({ pos_profile: props.posProfile });
-	}
-	document.addEventListener("keydown", handleKeyboardShortcuts);
+        document.addEventListener("keydown", handleKeyboardShortcuts);
 });
 
 onUnmounted(() => {
@@ -1847,6 +1843,10 @@ watch(
 	() => props.modelValue,
 	(val) => {
 		if (val) {
+                        if (props.posProfile) {
+                                loadPaymentMethodsResource.reload();
+                                returnSecurityOptionsResource.fetch({ pos_profile: props.posProfile });
+                        }
 			// If a preselected invoice is provided, skip showing the invoice list dialog
 			// and go directly to the Process Return modal
 			if (props.preselectedInvoice?.name) {

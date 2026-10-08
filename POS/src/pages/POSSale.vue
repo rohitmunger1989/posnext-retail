@@ -3524,6 +3524,7 @@ async function handlePaymentCompleted(paymentData) {
 
 function handleClearCart() {
 	if (cartStore.isEmpty) return;
+        document.activeElement?.blur?.();
 	uiStore.showClearCartDialog = true;
 }
 
@@ -3542,6 +3543,7 @@ function confirmClearCart() {
 	// Reset cart hash when cart is cleared
 	previousCartHash = "";
 	editingOfflineContext = null;
+        document.activeElement?.blur?.();
 	uiStore.showClearCartDialog = false;
 	showSuccess(__("All items removed from cart"));
 }

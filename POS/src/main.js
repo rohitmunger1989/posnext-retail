@@ -167,6 +167,7 @@ async function initializeApp() {
                 const persistentOfflineUser = getCachedOfflineSessionUser();
 
                 try {
+                        await csrfPromise;
                         if (!userResource.loading) userResource.fetch();
                         await userResource.promise;
 

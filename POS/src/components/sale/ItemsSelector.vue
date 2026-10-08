@@ -475,7 +475,7 @@
 						:key="item.item_code"
 						@touchstart.passive="getOptimizedClickHandler(item).touchstart"
 						@touchmove.passive="getOptimizedClickHandler(item).touchmove"
-						@touchend.passive="getOptimizedClickHandler(item).touchend"
+						@touchend="getOptimizedClickHandler(item).touchend"
 						@click="getOptimizedClickHandler(item).click"
 						:class="[
 							'group relative bg-white border border-gray-200 rounded-lg p-1.5 sm:p-2.5 touch-manipulation transition-[border-color,box-shadow] duration-100 cursor-pointer hover:border-blue-400 hover:shadow-md',
@@ -798,7 +798,7 @@
 							:key="item.item_code"
 							@touchstart.passive="getOptimizedClickHandler(item).touchstart"
 							@touchmove.passive="getOptimizedClickHandler(item).touchmove"
-							@touchend.passive="getOptimizedClickHandler(item).touchend"
+							@touchend="getOptimizedClickHandler(item).touchend"
 							@click="getOptimizedClickHandler(item).click"
 							class="group cursor-pointer hover:bg-blue-50 hover:shadow-md transition-[background-color,box-shadow] duration-100 touch-manipulation active:bg-blue-100"
 						>

@@ -1399,9 +1399,6 @@ watch(
 	}
 );
 
-onMounted(() => {
-	checkPermissions();
-});
 
 // Check user permissions
 async function checkPermissions() {
