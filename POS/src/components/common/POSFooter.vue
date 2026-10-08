@@ -33,6 +33,7 @@ const footerLink = ref("https://nexus.brainwise.me");
 const footerRoot = ref(null);
 const config = ref({});
 const serverValidationEnabled = ref(true);
+const BRANDING_CACHE_KEY = "posnext_branding_config_v1";
 
 // Dynamic class and style to prevent easy CSS targeting
 const componentId = Math.random().toString(36).substring(7);
@@ -73,6 +74,11 @@ const loadBrandingConfig = async () => {
 
 		if (response) {
 			config.value = response;
+                        try {
+                                localStorage.setItem(BRANDING_CACHE_KEY, JSON.stringify(response));
+                        } catch (cacheError) {
+                                console.warn("[POS Branding] Could not cache branding config:", cacheError);
+                        }
 
 			// Decode base64 encoded values
 			footerText.value = atob(response._t || "");
@@ -91,12 +97,29 @@ const loadBrandingConfig = async () => {
 				startServerValidation();
 			}
 		}
-	} catch (error) {
-		console.error("[BrainWise] Failed to load branding config:", error);
-		// Use fallback values
-		footerText.value = "Powered by";
-		linkText.value = "BrainWise";
-		footerLink.value = "https://nexus.brainwise.me";
+        } catch (error) {
+                console.error("[BrainWise] Failed to load branding config:", error);
+
+                try {
+                        const cached = localStorage.getItem(BRANDING_CACHE_KEY);
+
+                        if (cached) {
+                                const cachedConfig = JSON.parse(cached);
+                                config.value = cachedConfig;
+                                footerText.value = atob(cachedConfig._t || "");
+                                linkText.value = atob(cachedConfig._l || "");
+                                footerLink.value = atob(cachedConfig._u || "");
+                                serverValidationEnabled.value = false;
+                                console.info("[POS Branding] Using cached branding config.");
+                                return;
+                        }
+                } catch (cacheError) {
+                        console.warn("[POS Branding] Could not restore cached branding config:", cacheError);
+                }
+
+                footerText.value = "Powered by";
+                linkText.value = "BrainWise";
+                footerLink.value = "https://nexus.brainwise.me";
 	}
 };
 
