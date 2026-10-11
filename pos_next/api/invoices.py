@@ -1515,37 +1515,63 @@ def _reuse_sync_record(sync_record_name):
 
 
 def _ensure_offline_uniqueness(offline_id, pos_profile=None, customer=None):
-	"""
-	Ensure offline invoice uniqueness with race condition protection.
+	"""Reserve offline invoices without locking missing index gaps."""
+	import uuid
 
-	Uses a reservation pattern:
-	1. Check if a sync record exists (with row-level lock)
-	2. If synced with valid invoice, return existing invoice
-	3. If synced but invoice deleted/invalid, allow retry
-	4. If pending but expired (>5 min), allow retry
-	5. If pending and active, reject (another request processing)
-	6. If failed, allow retry
-	7. If not exists, create pending reservation
+	save_point = "offline_sync_" + uuid.uuid4().hex
+	frappe.db.savepoint(save_point)
 
-	Args:
-	    offline_id: The unique offline ID from the client
-	    pos_profile: POS Profile name
-	    customer: Customer name
+	try:
+		pending_sync = frappe.get_doc({
+			"doctype": "Offline Invoice Sync",
+			"offline_id": offline_id,
+			"sales_invoice": "",
+			"pos_profile": pos_profile,
+			"customer": customer,
+			"status": "Pending",
+		})
+		pending_sync.flags.ignore_permissions = True
+		pending_sync.insert()
+		frappe.db.release_savepoint(save_point)
+		return {
+			"already_synced": False,
+			"sync_record_name": pending_sync.name,
+		}
 
-	Returns:
-	    dict with:
-	    - already_synced (bool): True if invoice was already synced
-	    - invoice_data (dict): Existing invoice data if already_synced
-	    - sync_record_name (str): Name of the sync record for this attempt
-	"""
-	# Acquire row-level lock to prevent race conditions
-	existing_sync = frappe.db.get_value(
-		"Offline Invoice Sync",
-		{"offline_id": offline_id},
-		["name", "sales_invoice", "status", "modified"],
-		as_dict=True,
-		for_update=True,
-	)
+	except frappe.UniqueValidationError as error:
+		cause = error.__cause__
+		if cause is None and len(error.args) >= 3:
+			cause = error.args[2]
+
+		args = getattr(cause, "args", ())
+		message = str(args[1]) if len(args) > 1 else ""
+		key = message.rsplit("for key '", 1)[-1].rstrip("'")
+		key = key.strip("`").split(".")[-1]
+
+		if not (
+			len(args) > 1
+			and args[0] == 1062
+			and "for key '" in message
+			and key == "offline_id"
+		):
+			raise
+
+		frappe.db.rollback(save_point=save_point)
+		frappe.db.release_savepoint(save_point)
+
+		existing_sync = frappe.db.get_value(
+			"Offline Invoice Sync",
+			{"offline_id": offline_id},
+			["name", "sales_invoice", "status", "modified"],
+			as_dict=True,
+			for_update=True,
+		)
+
+		if not existing_sync:
+			frappe.throw(
+				_("Offline reservation conflict could not be resolved."),
+				exc=frappe.ValidationError,
+			)
 
 	if existing_sync:
 		sync_status = existing_sync.get("status")
@@ -1594,27 +1620,6 @@ def _ensure_offline_uniqueness(offline_id, pos_profile=None, customer=None):
 
 		# Unknown status or synced without invoice - allow retry
 		return _reuse_sync_record(sync_record_name)
-
-	# No existing record - create pending reservation
-	try:
-		pending_sync = frappe.get_doc(
-			{
-				"doctype": "Offline Invoice Sync",
-				"offline_id": offline_id,
-				"sales_invoice": "",
-				"pos_profile": pos_profile,
-				"customer": customer,
-				"status": "Pending",
-			}
-		)
-		pending_sync.flags.ignore_permissions = True
-		pending_sync.insert()
-
-		return {"already_synced": False, "sync_record_name": pending_sync.name}
-	except frappe.DuplicateEntryError:
-		# Race condition: another request just created the record
-		# Retry the check to get the new record
-		return _ensure_offline_uniqueness(offline_id, pos_profile, customer)
 
 
 def _complete_offline_sync(sync_record_name, invoice_name):
