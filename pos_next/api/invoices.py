@@ -1594,29 +1594,54 @@ def _ensure_offline_uniqueness(offline_id, pos_profile=None, customer=None):
 		if sync_status == "Failed":
 			return _reuse_sync_record(sync_record_name)
 
-		# Handle Synced status - verify invoice still valid
-		if sync_status == "Synced" and existing_sync.sales_invoice:
-			if frappe.db.exists("Sales Invoice", existing_sync.sales_invoice):
-				existing_invoice = frappe.get_doc("Sales Invoice", existing_sync.sales_invoice)
-				if existing_invoice.docstatus == 1:
-					return {
-						"already_synced": True,
-						"invoice_data": {
-							"name": existing_invoice.name,
-							"status": existing_invoice.docstatus,
-							"grand_total": existing_invoice.grand_total,
-							"total": existing_invoice.total,
-							"net_total": existing_invoice.net_total,
-							"outstanding_amount": getattr(existing_invoice, "outstanding_amount", 0),
-							"paid_amount": getattr(existing_invoice, "paid_amount", 0),
-							"change_amount": getattr(existing_invoice, "change_amount", 0),
-							"duplicate_prevented": True,
-							"offline_id": offline_id,
-						},
-					}
+		# Handle Synced status using current reads.
+		# Under REPEATABLE-READ, a normal snapshot read may not see
+		# an invoice committed by the competing request.
+		if sync_status == "Synced":
+			if not existing_sync.sales_invoice:
+				frappe.throw(
+					_("Synced offline reservation has no linked invoice."),
+					exc=frappe.ValidationError,
+				)
 
-			# Synced record points to deleted/invalid invoice - allow retry
-			return _reuse_sync_record(sync_record_name)
+			existing_invoice = frappe.db.get_value(
+				"Sales Invoice",
+				existing_sync.sales_invoice,
+				[
+					"name",
+					"docstatus",
+					"grand_total",
+					"total",
+					"net_total",
+					"outstanding_amount",
+					"paid_amount",
+					"change_amount",
+				],
+				as_dict=True,
+				for_update=True,
+			)
+
+			if existing_invoice and existing_invoice.docstatus == 1:
+				return {
+					"already_synced": True,
+					"invoice_data": {
+						"name": existing_invoice.name,
+						"status": existing_invoice.docstatus,
+						"grand_total": existing_invoice.grand_total,
+						"total": existing_invoice.total,
+						"net_total": existing_invoice.net_total,
+						"outstanding_amount": existing_invoice.outstanding_amount,
+						"paid_amount": existing_invoice.paid_amount,
+						"change_amount": existing_invoice.change_amount,
+						"duplicate_prevented": True,
+						"offline_id": offline_id,
+					},
+				}
+
+			frappe.throw(
+				_("Synced offline reservation references a missing or unsubmitted invoice."),
+				exc=frappe.ValidationError,
+			)
 
 		# Unknown status or synced without invoice - allow retry
 		return _reuse_sync_record(sync_record_name)
