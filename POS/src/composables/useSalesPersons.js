@@ -173,9 +173,11 @@ export function useSalesPersons(posProfile) {
 		const count = selectedSalesPersons.value.length;
 		if (count === 0) return;
 
-		const evenShare = 100 / count;
-		selectedSalesPersons.value.forEach((person) => {
-			person.allocated_percentage = evenShare;
+		const baseUnits = Math.floor(10000 / count);
+		const remainder = 10000 - baseUnits * count;
+		selectedSalesPersons.value.forEach((person, index) => {
+		    person.allocated_percentage =
+		        (baseUnits + (index < remainder ? 1 : 0)) / 100;
 		});
 	}
 

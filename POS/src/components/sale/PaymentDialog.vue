@@ -433,7 +433,7 @@
 										{{ person.sales_person_name || person.sales_person }}
 									</span>
 									<span class="text-purple-600 font-semibold">
-										{{ Math.round(person.allocated_percentage) }}%
+										{{ Number(person.allocated_percentage).toFixed(2) }}%
 									</span>
 									<button
 										@click="removeSalesPerson(person.sales_person)"
@@ -2743,9 +2743,11 @@ function redistributeCommission() {
 	const count = selectedSalesPersons.value.length;
 	if (count === 0) return;
 
-	const evenShare = 100 / count;
-	selectedSalesPersons.value.forEach((person) => {
-		person.allocated_percentage = evenShare;
+	const baseUnits = Math.floor(10000 / count);
+	const remainder = 10000 - baseUnits * count;
+	selectedSalesPersons.value.forEach((person, index) => {
+	    person.allocated_percentage =
+	        (baseUnits + (index < remainder ? 1 : 0)) / 100;
 	});
 }
 
