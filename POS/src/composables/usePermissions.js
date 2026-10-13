@@ -1,4 +1,5 @@
 import { call } from "@/utils/apiWrapper";
+import { userData } from "@/data/user";
 import { computed, ref } from "vue";
 
 /**
@@ -17,11 +18,15 @@ export function usePermissions() {
 	 * @param {string} docname - Optional document name (null for create operations)
 	 * @returns {Promise<boolean>} - True if user has permission
 	 */
-	async function checkPermission(doctype, permType = "create", docname = null) {
+	async function checkPermission(doctype, permType = "create", docname = null, forceRefresh = false) {
 		try {
 			// Check cache first
-			const cacheKey = `${doctype}:${permType}`;
-			if (permissionCache.value[cacheKey] !== undefined) {
+			const user = userData.userId || window.frappe?.session?.user;
+
+                        if (!user || user === "Guest") return false;
+
+                        const cacheKey = `${user}:${doctype}:${permType}:${docname || ""}`;
+			if (!forceRefresh && permissionCache.value[cacheKey] !== undefined) {
 				return permissionCache.value[cacheKey];
 			}
 
@@ -33,7 +38,10 @@ export function usePermissions() {
 			});
 
 			// Extract has_permission from response object
-			const hasPermission = Boolean(result?.has_permission);
+			const payload = result?.message ?? result;
+                        const hasPermission =
+                                payload?.has_permission === true ||
+                                payload?.has_permission === 1;
 
 			// Cache the result
 			permissionCache.value[cacheKey] = hasPermission;
@@ -134,7 +142,7 @@ export function usePOSPermissions() {
 	const { checkPermission, preloadCommonPermissions } = usePermissions();
 
 	// Customer permissions
-	const canCreateCustomer = async () => await checkPermission("Customer", "create");
+	const canCreateCustomer = async () => await checkPermission("Customer", "create", null, true);
 	const canEditCustomer = async () => await checkPermission("Customer", "write");
 
 	// Promotion permissions

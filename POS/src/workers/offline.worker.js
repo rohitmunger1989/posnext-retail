@@ -100,6 +100,15 @@ async function initDB() {
 				// Create singleton instance
 				db = new Dexie(CONFIG.DB_NAME);
 
+                                // Release the connection for a schema upgrade.
+                                // Never delete the existing IndexedDB database.
+                                db.on("versionchange", () => {
+                                        log.warn("Offline database version changed; closing worker connection");
+                                        dbInitialized = false;
+                                        db.close();
+                                        db = null;
+                                });
+
 				// Open database
 				await db.open();
 

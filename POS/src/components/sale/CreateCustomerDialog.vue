@@ -269,6 +269,7 @@
 </template>
 
 <script setup>
+import { call } from "@/utils/apiWrapper";
 /**
  * CreateCustomerDialog - Quick customer creation from POS
  *
@@ -282,6 +283,9 @@
 import { usePOSPermissions } from "@/composables/usePermissions";
 import { useToast } from "@/composables/useToast";
 import { useCountriesStore } from "@/stores/countries";
+import { db } from "@/utils/offline/db";
+import { offlineState } from "@/utils/offline/offlineState";
+import { saveOfflineCustomer } from "@/utils/offline/customerQueue";
 import { logger } from "@/utils/logger";
 import { Button, Dialog, Input, createResource } from "frappe-ui";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -503,20 +507,48 @@ function pickDefault(settingsValue, list, fallbackFn = null) {
 	return list[0] || "";
 }
 
+/** Load previously cached customer-form options. */
+const restoreCustomerFormOptions = async () => {
+    const entries = [
+        ["Customer Group", customerGroups],
+        ["Territory", territories],
+        ["Governorate", governorates],
+    ];
+
+    for (const [doctype, target] of entries) {
+        try {
+            const cached = await db.settings.get(`customer_form_options_v1:${doctype}`);
+            if (Array.isArray(cached?.value)) {
+                target.value = cached.value;
+            }
+        } catch (error) {
+            log.warn(`Failed to restore cached ${doctype}`, error);
+        }
+    }
+};
+
 /** Helper to create list fetch resources */
 const createListResource = (doctype, onSuccess) =>
-	createResource({
-		url: "frappe.client.get_list",
-		makeParams: () => ({
-			doctype,
-			fields: ["name"],
-			filters: doctype === "Customer Group" ? { is_group: 0 } : {},
-			limit_page_length: 500,
-		}),
-		auto: false,
-		onSuccess: (data) => data?.length && onSuccess(data.map((d) => d.name)),
-		onError: (err) => log.error(`Error loading ${doctype}`, err),
-	});
+    createResource({
+        url: "frappe.client.get_list",
+        makeParams: () => ({
+            doctype,
+            fields: ["name"],
+            filters: doctype === "Customer Group" ? { is_group: 0 } : {},
+            limit_page_length: 500,
+        }),
+        auto: false,
+        onSuccess: (data) => {
+            if (!Array.isArray(data)) return;
+            const names = data.map((d) => d.name).filter(Boolean);
+            onSuccess(names);
+            db.settings.put({
+                key: `customer_form_options_v1:${doctype}`,
+                value: names,
+            }).catch((error) => log.warn(`Failed to cache ${doctype}`, error));
+        },
+        onError: (err) => log.warn(`Error loading ${doctype}`, err),
+    });
 
 const customerGroupsResource = createListResource("Customer Group", (names) => {
 	customerGroups.value = names;
@@ -556,45 +588,90 @@ const customerLocationResource = createResource({
 });
 
 const districtsResource = createResource({
-	url: "frappe.client.get_list",
-	makeParams: () => ({
-		doctype: "District",
-		fields: ["name", "district"],
-		filters: { governorate: customerData.value.custom_governorate },
-		limit_page_length: 0,
-		order_by: "district asc",
-	}),
-	auto: false,
-	onSuccess: (data) => {
-		districts.value = data || [];
-		// Drop the selected district if it no longer belongs to the governorate
-		if (
-			customerData.value.custom_district &&
-			!districts.value.some((d) => d.name === customerData.value.custom_district)
-		) {
-			customerData.value.custom_district = "";
-		}
-	},
-	onError: (err) => log.error("Error loading Districts", err),
+    url: "frappe.client.get_list",
+    makeParams: () => ({
+        doctype: "District",
+        fields: ["name", "district"],
+        filters: { governorate: customerData.value.custom_governorate },
+        limit_page_length: 0,
+        order_by: "district asc",
+    }),
+    auto: false,
+    onSuccess: (data) => {
+        if (!Array.isArray(data)) return;
+
+        districts.value = data;
+
+        const governorate = customerData.value.custom_governorate;
+        if (governorate) {
+            db.settings.put({
+                key: `customer_districts_v1:${governorate}`,
+                value: data,
+            }).catch((error) => log.warn("Failed to cache districts", error));
+        }
+
+        if (
+            customerData.value.custom_district &&
+            !data.some((d) => d.name === customerData.value.custom_district)
+        ) {
+            customerData.value.custom_district = "";
+        }
+    },
+    onError: (err) => log.warn("Error loading Districts", err),
 });
 
+const loadDistrictOptions = async (governorate) => {
+    if (!governorate) {
+        districts.value = [];
+        return;
+    }
+
+    // Restore previously cached districts first.
+    try {
+        const cached = await db.settings.get(
+            `customer_districts_v1:${governorate}`
+        );
+        districts.value = Array.isArray(cached?.value) ? cached.value : [];
+    } catch (error) {
+        log.warn("Failed to restore districts", error);
+        districts.value = [];
+    }
+
+    // Refresh only when ERPNext is reachable.
+    if (!offlineState.isOffline && navigator.onLine) {
+        try {
+            await districtsResource.reload();
+        } catch (error) {
+            log.warn("Using cached districts", error);
+        }
+    }
+};
+
 const posProfileResource = createResource({
-	url: "frappe.client.get_value",
-	makeParams: () => ({
-		doctype: "POS Profile",
-		filters: { name: props.posProfile },
-		fieldname: ["country"],
-	}),
-	auto: false,
-	onSuccess: (data) => setCountryFromName(data?.country || "Egypt"),
-	onError: (err) => {
-		log.error("Error loading POS Profile", err);
-		selectedCountryCode.value = "+20";
-	},
+    url: "frappe.client.get_value",
+    makeParams: () => ({
+        doctype: "POS Profile",
+        filters: { name: props.posProfile },
+        fieldname: ["country"],
+    }),
+    auto: false,
+    onSuccess: (data) => {
+        if (!data?.country) return;
+        setCountryFromName(data.country);
+        if (props.posProfile && selectedCountryCode.value) {
+            db.settings.put({
+                key: `customer_pos_country_v1:${props.posProfile}`,
+                value: selectedCountryCode.value,
+            }).catch((err) => log.warn("Failed to cache POS country", err));
+        }
+    },
+    onError: (err) => {
+        log.warn("Could not load POS Profile country", err);
+    },
 });
 
 // =============================================================================
-// Dialog Lifecycle
+// // Dialog Lifecycle
 // =============================================================================
 
 /**
@@ -636,11 +713,15 @@ const applyInitialSearchPrefill = (rawValue) => {
 			.filter((entry) => entry.isdDigits && digits.startsWith(entry.isdDigits))
 			.sort((a, b) => b.isdDigits.length - a.isdDigits.length)[0];
 
-		if (!country) continue;
-		const localDigits = digits.slice(country.isdDigits.length);
+		// Kuwait fallback when the offline country cache is unavailable.
+		const resolvedCountry = country || (
+		    digits.startsWith("965") ? { isd: "+965", isdDigits: "965" } : null
+		);
+		if (!resolvedCountry) continue;
+		const localDigits = digits.slice(resolvedCountry.isdDigits.length);
 		if (localDigits.length < 6 || localDigits.length > 15) continue;
 
-		detectedCountryISD = country.isd;
+		detectedCountryISD = resolvedCountry.isd;
 		detectedPhone = localDigits;
 		working = `${working.slice(0, match.index)} ${working.slice(
 			(match.index || 0) + token.length
@@ -682,68 +763,207 @@ const applyInitialSearchPrefill = (rawValue) => {
 };
 
 const loadDialogData = async () => {
-	// Country data is required before parsing explicit +<code>/00<code> prefixes.
-	await countriesStore.loadCountries();
+    await restoreCustomerFormOptions();
+    await countriesStore.loadCountries();
 
-	await sellingSettingsResource.reload();
+    const online = !offlineState.isOffline && navigator.onLine;
 
-	if (!isEditMode.value) {
-		customerData.value.customer_group = "";
-		customerData.value.territory = "";
-	}
+    if (online) {
+        try {
+            await sellingSettingsResource.reload();
+            await Promise.all([
+                territoriesResource.reload(),
+                customerGroupsResource.reload(),
+                governoratesResource.reload(),
+            ]);
+        } catch (error) {
+            log.warn("Using cached customer form options", error);
+        }
+    }
 
-	// Load form options
-	await Promise.all([
-		territoriesResource.reload(),
-		customerGroupsResource.reload(),
-		governoratesResource.reload(),
-	]);
-	if (isEditMode.value && props.customer?.name) {
-		await customerLocationResource.reload();
-	}
-	if (customerData.value.custom_governorate) {
-		await districtsResource.reload();
-	}
-	checkPermissions();
+    if (!isEditMode.value) {
+        const settings = sellingSettingsResource.data || {};
+        customerData.value.customer_group = pickDefault(
+            settings.customer_group,
+            customerGroups.value
+        );
+        customerData.value.territory = pickDefault(
+            settings.territory,
+            territories.value,
+            (list) => list.find((name) => name === "All Territories")
+        );
+    }
 
-	// Set country from POS Profile
-	if (props.posProfile) {
-		await posProfileResource.reload();
-	} else {
-		selectedCountryCode.value = "+20";
-	}
+    if (online && isEditMode.value && props.customer?.name) {
+        await customerLocationResource.reload();
+    }
 
-	// Apply POS search text only after the default country code is known.
-	// An explicit +<code>/00<code> in the search overrides that default.
-	if (!isEditMode.value && props.initialName) {
-		applyInitialSearchPrefill(props.initialName);
-	}
+    if (customerData.value.custom_governorate) {
+        await loadDistrictOptions(customerData.value.custom_governorate);
+    }
+
+    await checkPermissions();
+
+    selectedCountryCode.value = "";
+
+    if (props.posProfile) {
+        try {
+            const cached = await db.settings.get(
+                `customer_pos_country_v1:${props.posProfile}`
+            );
+            if (cached?.value) selectedCountryCode.value = cached.value;
+        } catch (error) {
+            log.warn("Could not restore cached POS country", error);
+        }
+
+        if (online) {
+            try {
+                await posProfileResource.reload();
+            } catch (error) {
+                log.warn("Using cached POS country", error);
+            }
+        }
+    }
+
+    // Preserve Smart Prefill for name, local and international numbers.
+    if (!isEditMode.value && props.initialName) {
+        applyInitialSearchPrefill(props.initialName);
+    }
+};
+
+const getPermissionUser = () => {
+    const cookie = document.cookie
+        .split("; ")
+        .find((entry) => entry.startsWith("user_id="));
+
+    if (!cookie) return null;
+
+    try {
+        const user = decodeURIComponent(cookie.slice("user_id=".length));
+        return user && user !== "Guest" ? user : null;
+    } catch {
+        return null;
+    }
+};
+
+const customerPermissionKey = (user) =>
+    `customer_create_permission_v1:${user}`;
+
+const restoreOfflineCustomerPermission = async () => {
+    hasPermission.value = false;
+
+    const user = getPermissionUser();
+    if (!user) return;
+
+    try {
+        const record = await db.settings.get(customerPermissionKey(user));
+        const permission = record?.value;
+
+        const valid =
+            permission?.user === user &&
+            permission?.allowed === true &&
+            Number.isFinite(permission?.timestamp) &&
+            Date.now() - permission.timestamp >= 0 &&
+            Date.now() - permission.timestamp < 24 * 60 * 60 * 1000;
+
+        hasPermission.value = Boolean(valid);
+    } catch (error) {
+        log.warn("Could not restore offline customer permission", error);
+    }
 };
 
 const checkPermissions = async () => {
-	checkingPermission.value = true;
-	try {
-		hasPermission.value = await canCreateCustomer();
-	} catch (err) {
-		log.error("Permission check failed", err);
-		hasPermission.value = false;
-	} finally {
-		checkingPermission.value = false;
-	}
+    checkingPermission.value = true;
+    hasPermission.value = false;
+
+    try {
+        const user = getPermissionUser();
+        if (!user) return;
+
+        if (offlineState.isOffline || !navigator.onLine) {
+            await restoreOfflineCustomerPermission();
+            return;
+        }
+
+        // Check directly with ERPNext; distinguish denial from network errors.
+        const response = await call("frappe.client.has_permission", {
+            doctype: "Customer",
+            docname: "",
+            perm_type: "create",
+        });
+
+        const permission = response?.message ?? response;
+        if (permission?.has_permission === undefined) {
+            throw new Error("Invalid Customer permission response");
+        }
+
+        const allowed =
+            permission.has_permission === true ||
+            permission.has_permission === 1;
+
+        hasPermission.value = allowed;
+
+        await db.settings.put({
+            key: customerPermissionKey(user),
+            value: {
+                user,
+                allowed: Boolean(allowed),
+                timestamp: Date.now(),
+            },
+        });
+    } catch (error) {
+        log.error("Permission check failed", error);
+        hasPermission.value = false;
+    } finally {
+        checkingPermission.value = false;
+    }
 };
 
 const handleCreate = async () => {
-	if (!customerData.value.customer_name) {
-		return showError(__("Customer Name is required"));
-	}
-	if (!phoneNumber.value) {
-		return showError(__("Mobile Number is required"));
-	}
-	if (isEditMode.value) {
-		await updateCustomerResource.submit();
-	} else {
-		await createCustomerResource.submit();
-	}
+    if (!hasPermission.value || !getPermissionUser()) {
+        return showError(__("Customer creation permission is required"));
+    }
+
+    if (!customerData.value.customer_name?.trim()) {
+        return showError(__("Customer Name is required"));
+    }
+
+    if (!phoneNumber.value) {
+        return showError(__("Mobile Number is required"));
+    }
+
+    // Editing existing customers still requires ERPNext.
+    if (isEditMode.value) {
+        if (offlineState.isOffline || !navigator.onLine) {
+            return showError(__("Editing customers requires an internet connection"));
+        }
+
+        await updateCustomerResource.submit();
+        return;
+    }
+
+    // Offline customer creation: persist locally before selecting customer.
+    if (offlineState.isOffline || !navigator.onLine) {
+        try {
+            updateMobileNumber();
+
+            const customer = await saveOfflineCustomer(
+                { ...customerData.value },
+                props.posProfile
+            );
+
+            emit("customer-created", customer);
+            showSuccess(__("Customer saved offline. Will sync when online."));
+            show.value = false;
+        } catch (error) {
+            log.error("Could not save offline customer", error);
+            showError(error.message || __("Failed to save offline customer"));
+        }
+        return;
+    }
+
+    // Preserve normal online customer creation.
+    await createCustomerResource.submit();
 };
 
 const resetForm = () => {
@@ -828,15 +1048,16 @@ watch(selectedCountryCode, async (newVal, oldVal) => {
 });
 
 watch(
-	() => customerData.value.custom_governorate,
-	(governorate) => {
-		if (governorate) {
-			districtsResource.reload();
-		} else {
-			districts.value = [];
-			customerData.value.custom_district = "";
-		}
-	}
+    () => customerData.value.custom_governorate,
+    async (governorate) => {
+        customerData.value.custom_district = "";
+
+        if (governorate) {
+            await loadDistrictOptions(governorate);
+        } else {
+            districts.value = [];
+        }
+    }
 );
 
 watch(showCountryDropdown, async (isOpen) => {

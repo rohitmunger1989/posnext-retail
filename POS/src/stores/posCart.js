@@ -5,6 +5,7 @@ import { usePOSShiftStore } from "@/stores/posShift";
 import { parseError } from "@/utils/errorHandler";
 import { shouldValidateItemStock, checkStockAvailability } from "@/utils/stockValidator";
 import { offlineState } from "@/utils/offline/offlineState";
+import { syncPendingOfflineCustomers, resolveOfflineCustomerId } from "@/utils/offline/customerQueue";
 import { useToast } from "@/composables/useToast";
 import { defineStore } from "pinia";
 import { computed, nextTick, ref, toRaw, watch } from "vue";
@@ -275,7 +276,41 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			return;
 		}
 
-		// Capture one-time offer redemptions before submission can clear the cart.
+		// Resolve offline-created customer before normal online checkout.
+                const selectedCustomerId = customer.value?.name || customer.value;
+
+                if (String(selectedCustomerId || "").startsWith("pos_customer_")) {
+                        if (offlineState.isOffline || !navigator.onLine) {
+                                showWarning(__("Customer is pending synchronization. Please reconnect."));
+                                return;
+                        }
+
+                        try {
+                                await syncPendingOfflineCustomers();
+
+                                const serverCustomerId = await resolveOfflineCustomerId(selectedCustomerId);
+
+                                if (!serverCustomerId) {
+                                        showWarning(__("Customer synchronization is pending. Please retry."));
+                                        return;
+                                }
+
+                                if (typeof customer.value === "object" && customer.value !== null) {
+                                        customer.value = {
+                                                ...customer.value,
+                                                name: serverCustomerId,
+                                                offline_pending: false,
+                                        };
+                                } else {
+                                        customer.value = serverCustomerId;
+                                }
+                        } catch (error) {
+                                showWarning(__("Customer synchronization failed. Invoice was not submitted."));
+                                return;
+                        }
+                }
+
+                // Capture one-time offer redemptions before submission can clear the cart.
 		const customerName = customer.value?.name || customer.value || null;
 		const oneTimeRuleNames = appliedOffers.value
 			.filter((o) => o.offer?.one_time_per_customer)
@@ -552,6 +587,12 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	}
 
 	async function applyOffer(offer, currentProfile, offersDialogRef = null) {
+        // Offline customer pending: manual promotion
+        if (String(customer.value?.name || customer.value || "").startsWith("pos_customer_")) {
+            showWarning(__("Customer must synchronize before applying promotions."));
+            return false;
+        }
+
 		if (!offer) {
 			console.error("No offer provided");
 			offersDialogRef?.resetApplyingState();
@@ -720,7 +761,14 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			return true;
 		}
 
-		let result = false;
+
+        // Offline customer pending: manual promotion
+        if (String(customer.value?.name || customer.value || "").startsWith("pos_customer_")) {
+            showWarning(__("Customer must synchronize before applying promotions."));
+            return false;
+        }
+
+        let result = false;
 
 		await offerQueue.enqueue(async (signal) => {
 			if (signal?.aborted) return;
@@ -783,6 +831,12 @@ export const usePOSCartStore = defineStore("posCart", () => {
 	 * @returns {boolean} True if any offers were removed
 	 */
 	async function reapplyOffer(currentProfile, signal = null) {
+        // Offline customer pending: manual promotion
+        if (String(customer.value?.name || customer.value || "").startsWith("pos_customer_")) {
+            showWarning(__("Customer must synchronize before applying promotions."));
+            return false;
+        }
+
 		// Clear offers if cart is empty
 		if (invoiceItems.value.length === 0 && appliedOffers.value.length) {
 			appliedOffers.value = [];
@@ -1558,6 +1612,12 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		}
 
 		// === ONLINE MODE ===
+		// Skip server promotion processing for pending offline customers.
+		// Wait for the actual ERPNext Customer ID before server evaluation.
+		if (String(customer.value?.name || customer.value || "").startsWith("pos_customer_")) {
+		    return;
+		}
+
 		// Get current profile from posProfile
 		const currentProfile = {
 			customer: customer.value?.name || customer.value,

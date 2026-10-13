@@ -1084,6 +1084,12 @@ let _posInitPromise = null;
 </script>
 
 <script setup>
+import { offlineState } from "@/utils/offline/offlineState";
+import {
+    syncPendingOfflineCustomers,
+    resolveOfflineCustomerId,
+} from "@/utils/offline/customerQueue";
+
 import ShiftClosingDialog from "@/components/ShiftClosingDialog.vue";
 import ClearCacheOverlay from "@/components/common/ClearCacheOverlay.vue";
 import SessionLockScreen from "@/components/common/SessionLockScreen.vue";
@@ -3233,6 +3239,27 @@ function handleCashierSuccessNewSale() {
 
 async function handlePaymentCompleted(paymentData) {
 	try {
+	    // Payment Hub and online checkout require a real ERPNext Customer ID.
+	    const pendingCustomerId = cartStore.customer?.name || cartStore.customer;
+
+	    if (String(pendingCustomerId || "").startsWith("pos_customer_")
+	        && !offlineState.isOffline && navigator.onLine) {
+	        await syncPendingOfflineCustomers();
+
+	        const resolvedId = await resolveOfflineCustomerId(pendingCustomerId);
+
+	        if (!resolvedId) {
+	            showError(__("Customer synchronization is pending. Please retry."));
+	            return;
+	        }
+
+	        await cartStore.setCustomer({
+	            ...(typeof cartStore.customer === "object" ? cartStore.customer : {}),
+	            name: resolvedId,
+	            offline_pending: false,
+	        });
+	    }
+
 		const customerValue = cartStore.customer?.name || cartStore.customer;
 		if (!customerValue && !shiftStore.profileCustomer) {
 			showWarning(__("Please select a customer before proceeding"));
@@ -4042,6 +4069,32 @@ function handleBatchSerialSelected(batchSerial) {
 		}
 	}
 }
+
+function handleOfflineCustomerSynced(event) {
+    const { offlineId, serverId } = event.detail || {};
+    if (!offlineId || !serverId) return;
+
+    customerSearchStore.replaceOfflineCustomer(offlineId, serverId);
+
+    const selected = cartStore.customer;
+    const selectedId = selected?.name || selected;
+
+    if (selectedId === offlineId) {
+        const resolved = typeof selected === "object"
+            ? { ...selected, name: serverId, offline_pending: false }
+            : { name: serverId, customer_name: serverId };
+
+        cartStore.setCustomer(resolved);
+    }
+}
+
+onMounted(() => {
+    window.addEventListener("offlineCustomerSynced", handleOfflineCustomerSynced);
+});
+
+onUnmounted(() => {
+    window.removeEventListener("offlineCustomerSynced", handleOfflineCustomerSynced);
+});
 
 async function handleCustomerCreated(newCustomer) {
 	cartStore.setCustomer(newCustomer);

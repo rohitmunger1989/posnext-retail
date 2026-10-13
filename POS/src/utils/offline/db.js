@@ -42,6 +42,10 @@ const CURRENT_SCHEMA = {
 	// offline_id is a unique UUID for deduplication across syncs
 	invoice_queue: "++id, &offline_id, timestamp, synced",
 
+        // Pending offline customer creation.
+        // Stable offline_id supports retries and invoice customer resolution.
+        customer_queue: "&offline_id, status, timestamp, server_customer",
+
 	// Items cache with searchable fields
 	// variant_of index allows querying variants by their template item
 	// brand index allows efficient brand-based filtering in offline mode
@@ -117,91 +121,72 @@ function getSchemaHash(schema) {
  * @returns {number} Current schema version number
  * @private
  */
-function getSchemaVersion() {
-	const schemaHash = getSchemaHash(CURRENT_SCHEMA);
-	const storedHash = localStorage.getItem("pos_next_schema_hash");
-	const storedVersion = Number.parseInt(localStorage.getItem("pos_next_schema_version") || "1");
+// Dexie version 2 corresponds to native IndexedDB version 20.
+// Register the schema synchronously before other modules use db.
+const schemaHash = getSchemaHash(CURRENT_SCHEMA).toString();
+const storedHash = localStorage.getItem("pos_next_schema_hash");
+const storedVersion = Number.parseInt(
+    localStorage.getItem("pos_next_schema_version") || "1",
+    10
+);
 
-	if (storedHash !== schemaHash.toString()) {
-		// Schema changed, increment version
-		const newVersion = storedVersion + 1;
-		log.info(`Schema changed detected. Upgrading from v${storedVersion} to v${newVersion}`);
-		localStorage.setItem("pos_next_schema_hash", schemaHash.toString());
-		localStorage.setItem("pos_next_schema_version", newVersion.toString());
-		return newVersion;
-	}
+const baseVersion = Number.isSafeInteger(storedVersion) && storedVersion > 0
+    ? storedVersion
+    : 1;
 
-	return storedVersion;
-}
+const schemaVersion = storedHash === schemaHash
+    ? baseVersion
+    : baseVersion + 1;
 
-// Apply schema with auto-versioning
-const schemaVersion = getSchemaVersion();
-log.debug(`Initializing database with schema version: ${schemaVersion}`);
 db.version(schemaVersion).stores(CURRENT_SCHEMA);
 
-/**
- * Opens the database connection.
- * Called automatically on module import.
- * @returns {Promise<boolean>} True if opened successfully
- */
 export const initDB = async () => {
-	try {
-		await db.open();
-		log.success("POS Next offline database initialized");
-		return true;
-	} catch (error) {
-		log.error("Failed to initialize offline database:", error);
-		return false;
-	}
+    try {
+        await db.open();
+
+        // Record the successful upgrade, not just an attempted upgrade.
+        localStorage.setItem("pos_next_schema_hash", schemaHash);
+        localStorage.setItem(
+            "pos_next_schema_version",
+            String(schemaVersion)
+        );
+
+        log.success("POS Next offline database initialized");
+        return true;
+    } catch (error) {
+        log.error("Failed to initialize offline database:", error);
+        return false;
+    }
 };
 
 /**
- * Verifies database health and attempts recovery if needed.
- * Handles VersionError and InvalidStateError by recreating the database.
- * @returns {Promise<boolean>} True if database is healthy or recovered
+ * Verify database health without deleting offline transactions.
  */
 export const checkDBHealth = async () => {
-	try {
-		await db.settings.get("health_check");
-		return true;
-	} catch (error) {
-		log.error("Database health check failed:", error);
+    try {
+        await db.settings.get("health_check");
+        return true;
+    } catch (error) {
+        log.error("Database health check failed:", error);
 
-		// Try to reopen
-		try {
-			if (db.isOpen()) {
-				db.close();
-			}
-			await db.open();
-			log.info("Database reopened successfully");
-			return true;
-		} catch (reopenError) {
-			log.error("Failed to reopen database:", reopenError);
+        try {
+            if (db.isOpen()) {
+                db.close();
+            }
 
-			// If corrupted, recreate
-			if (reopenError.name === "VersionError" || reopenError.name === "InvalidStateError") {
-				log.warn("Database appears corrupted, recreating...");
-				try {
-					await Dexie.delete("pos_next_offline");
-					await db.open();
-					log.success("Database recreated successfully");
-					return true;
-				} catch (recreateError) {
-					log.error("Failed to recreate database:", recreateError);
-					return false;
-				}
-			}
-			return false;
-		}
-	}
+            await db.open();
+            log.info("Database reopened successfully");
+            return true;
+        } catch (reopenError) {
+            log.error(
+                "Database reopening failed. Preserving all offline data.",
+                reopenError
+            );
+            return false;
+        }
+    }
 };
 
-/**
- * Retrieves a setting value from the database.
- * @param {string} key - Setting key to retrieve
- * @param {*} [defaultValue=null] - Value to return if key not found
- * @returns {Promise<*>} Stored value or defaultValue
- */
 export const getSetting = async (key, defaultValue = null) => {
 	try {
 		const result = await db.settings.get(key);

@@ -2,6 +2,7 @@ import { call } from "@/utils/apiWrapper";
 import { logger } from "@/utils/logger";
 import { CoalescingMutex } from "@/utils/mutex";
 import { db } from "./db";
+import { syncPendingOfflineCustomers, resolveOfflineCustomerId } from "./customerQueue";
 import { offlineState } from "./offlineState";
 import { removeOfflineReceiptPayload } from "./offlineReceiptCache";
 import { generateOfflineId } from "./uuid";
@@ -358,6 +359,19 @@ const syncInvoiceToServer = async (invoice, retryCount = 0) => {
 
 	const invoiceData = normalizeInvoiceForSync(invoice.data, offlineId);
 
+        // Resolve offline-created customers before invoice submission.
+        if (String(invoiceData.customer || "").startsWith("pos_customer_")) {
+                const serverCustomer = await resolveOfflineCustomerId(invoiceData.customer);
+
+                if (!serverCustomer) {
+                        throw new Error(
+                                `CUSTOMER_SYNC_PENDING: Customer ${invoiceData.customer} must synchronize first`
+                        );
+                }
+
+                invoiceData.customer = serverCustomer;
+        }
+
 	try {
 		const response = await call("pos_next.api.invoices.submit_invoice", {
 			data: JSON.stringify({ invoice: invoiceData, data: {} }),
@@ -405,7 +419,13 @@ export const syncOfflineInvoices = async () => {
 	}
 
 	return await syncMutex.withLock(async () => {
-		const pendingInvoices = await getOfflineInvoices();
+		const customerSyncResult = await syncPendingOfflineCustomers();
+
+                if (customerSyncResult.failed) {
+                        log.warn("Some offline customers could not synchronize", customerSyncResult);
+                }
+
+                const pendingInvoices = await getOfflineInvoices();
 
 		if (!pendingInvoices.length) {
 			return { success: 0, failed: 0, skipped: 0, errors: [] };
@@ -438,6 +458,16 @@ export const syncOfflineInvoices = async () => {
 					log.debug("Invoice is duplicate, marked as synced", { id: invoice.id });
 					result.skipped++;
 					continue;
+				}
+
+				// Customer synchronization pending is not an invoice failure.
+				if (String(error?.message || "").includes("CUSTOMER_SYNC_PENDING")) {
+				    log.warn("Invoice waiting for offline customer sync", {
+				        invoiceId: invoice.id,
+				        customer: invoice.data?.customer,
+				    });
+				    result.skipped++;
+				    continue;
 				}
 
 				// Handle genuine failure

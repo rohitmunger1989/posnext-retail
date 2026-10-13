@@ -2,6 +2,8 @@ import { createResource } from "frappe-ui";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { logger } from "@/utils/logger";
+import { db } from "@/utils/offline/db";
+import { offlineState } from "@/utils/offline/offlineState";
 
 const log = logger.create("CountriesStore");
 
@@ -17,7 +19,16 @@ export const useCountriesStore = defineStore("countries", () => {
 		auto: false,
 		onSuccess(data) {
 			if (data?.country_info) {
-				countries.value = formatCountries(data.country_info);
+			    const formatted = formatCountries(data.country_info);
+			    if (!validCountries(formatted)) {
+			        log.warn("Ignoring incomplete country API response");
+			        return;
+			    }
+			    countries.value = formatted;
+                                db.settings.put({
+                                        key: "customer_country_codes_v1",
+                                        value: countries.value.map((country) => ({ ...country })),
+                                }).catch((error) => log.warn("Failed to cache country codes", error));
 				loaded.value = true;
 				log.info(`Loaded ${countries.value.length} countries`);
 			}
@@ -51,35 +62,72 @@ export const useCountriesStore = defineStore("countries", () => {
 		return String.fromCodePoint(...codePoints);
 	}
 
-	// Load countries (only once)
-	async function loadCountries() {
-		if (loaded.value) {
-			log.debug("Countries already loaded from cache");
-			return countries.value;
-		}
+        // Load country codes from IndexedDB before attempting the API.
 
-		if (loading.value) {
-			log.debug("Countries already loading, waiting...");
-			// Wait for existing load to complete
-			await new Promise((resolve) => {
-				const checkLoaded = setInterval(() => {
-					if (!loading.value) {
-						clearInterval(checkLoaded);
-						resolve();
-					}
-				}, 50);
-			});
-			return countries.value;
-		}
+        // Check that the cache contains the complete usable country list.
+        function validCountries(list) {
+                return Array.isArray(list)
+                        && list.length >= 200
+                        && ["Kuwait", "India", "United Arab Emirates"].every(
+                                (name) => list.some((c) =>
+                                        c.name === name && c.code && c.isd
+                                )
+                        );
+        }
 
-		loading.value = true;
-		try {
-			await countriesResource.fetch();
-		} finally {
-			loading.value = false;
-		}
-		return countries.value;
-	}
+        async function loadCountries() {
+                if (loaded.value && validCountries(countries.value)) {
+                        return countries.value;
+                }
+
+                if (loading.value) {
+                        while (loading.value) {
+                                await new Promise((resolve) => setTimeout(resolve, 50));
+                        }
+                        return countries.value;
+                }
+
+                loading.value = true;
+
+                try {
+                        try {
+                                const cached = await db.settings.get("customer_country_codes_v1");
+                                if (validCountries(cached?.value)) {
+                                        countries.value = cached.value;
+                                        loaded.value = true;
+                                }
+                        } catch (error) {
+                                log.warn("Could not read cached country codes", error);
+                        }
+
+                        if (!offlineState.isOffline && navigator.onLine) {
+                                try {
+                                        await countriesResource.fetch();
+                                } catch (error) {
+                                        log.warn("Country API failed; using cached country codes", error);
+                                }
+                        }
+
+                        if (validCountries(countries.value)) {
+                                loaded.value = true;
+                                try {
+                                        await db.settings.put({
+                                                key: "customer_country_codes_v1",
+                                                value: countries.value.map((country) => ({ ...country })),
+                                        });
+                                } catch (error) {
+                                        log.warn("Failed to cache country codes", error);
+                                }
+                        } else {
+                                loaded.value = false;
+                                log.warn("Full country list is unavailable");
+                        }
+
+                        return countries.value;
+                } finally {
+                        loading.value = false;
+                }
+        }
 
 	// Find country by ISD code
 	function findCountryByISD(isd) {
