@@ -1,6 +1,7 @@
 import { ref, readonly } from "vue";
 import { call } from "@/utils/apiWrapper";
 import { userData } from "@/data/user";
+import { session } from "@/data/session";
 import { usePOSCartStore } from "@/stores/posCart";
 import { offlineState } from "@/utils/offline/offlineState";
 
@@ -102,7 +103,7 @@ async function hashPassword(password, existingSalt = null) {
 }
 
 function getCurrentUserId() {
-	return userData.userId || window.frappe?.session?.user || null;
+	return session.user || userData.userId || window.frappe?.session?.user || null;
 }
 
 function cachePasswordHash(user, hash, salt) {
@@ -221,10 +222,12 @@ function clearAttemptCounter() {
 
 // Module-level singleton state (same pattern as useToast.js)
 const restored = restoreLockState();
+// Fail closed during startup until POS security settings are loaded.
+// When Session Lock is disabled, configure() clears this lock.
 const isLocked = ref(restored.locked);
 const isVerifying = ref(false);
 const verifyError = ref("");
-const lockedUser = ref(restored.user);
+const lockedUser = ref(restored.user || { name: userData.getDisplayName(), image: userData.getImageUrl(), initials: userData.getInitials() });
 
 let inactivityTimer = null;
 let lastActivityTime = 0;
@@ -278,11 +281,7 @@ function lock() {
 }
 
 function handleVisibilityChange() {
-	if (!lockEnabled) return;
-	if (document.hidden) {
-		// Lock immediately when tab loses focus
-		lock();
-	}
+    // Tab visibility changes must not activate Session Lock.
 }
 
 function unlockSuccess() {
@@ -407,12 +406,8 @@ function clearLock() {
 }
 
 function handlePageHide() {
-	if (!lockEnabled) return;
-	// Persist lock state on browser close / navigate away so the session
-	// starts locked on reload even if it wasn't locked at the moment of closing
-	if (!isLocked.value) {
-		persistLock(getUserInfo());
-	}
+    // lock() already persists genuine locks.
+    // Refreshing an unlocked session must not create a lock.
 }
 
 function startActivityTracking() {
@@ -426,7 +421,7 @@ function startActivityTracking() {
 	window.addEventListener("pagehide", handlePageHide);
 
 	listenersAttached = true;
-	lastActivityTime = Date.now();
+	lastActivityTime = 0;
 	resetTimer();
 }
 

@@ -20,6 +20,13 @@ import {
         cacheOfflineSessionUser,
 } from "./data/session";
 import { userResource } from "./data/user";
+import {
+        getSignedOfflineAuthorization,
+        refreshSignedOfflineAuthorization,
+} from "./utils/offline/offlineAuthorization";
+import {
+        verifyOfflineAuthorization,
+} from "./utils/offline/verifyOfflineAuthorization";
 import router from "./router";
 import {
 	createCSRFAwareRequest,
@@ -171,35 +178,68 @@ async function initializeApp() {
                         if (!userResource.loading) userResource.fetch();
                         await userResource.promise;
 
-                        const authenticatedUser = sessionUser();
+                        const serverUser = userResource.data?.message || userResource.data;
+                        const authenticatedUser = typeof serverUser === "string" && serverUser !== "Guest"
+                                ? serverUser : null;
+                        if (authenticatedUser && sessionUser() && sessionUser() !== authenticatedUser) {
+                                throw Object.assign(new Error("ERPNext session identity mismatch"), { status: 403 });
+                        }
 
                         if (authenticatedUser) {
+                                session.offlineRestored = false;
                                 cacheOfflineSessionUser(authenticatedUser);
+                                // Existing ERPNext cookie sessions also need a signed grant.
+                                void refreshSignedOfflineAuthorization(authenticatedUser);
                         }
 
                         return authenticatedUser;
                 } catch (error) {
-                        const browserOffline =
-                                typeof navigator !== "undefined" && navigator.onLine === false;
+                        // Network failures can occur even when navigator.onLine
+                        // reports true (for example, LAN connected without internet).
+                        // Never treat an authentication failure as an offline session.
+                        const status = Number(
+                                error?.status ?? error?.response?.status ?? 0
+                        );
+                        const exceptionType = String(error?.exc_type || "");
+                        const authenticationFailure =
+                                status === 401 ||
+                                status === 403 ||
+                                exceptionType === "AuthenticationError";
 
-                        if (browserOffline && cookieUser) {
-                                cacheOfflineSessionUser(cookieUser);
-                                log.info(
-                                        `Offline startup: preserving session user ${cookieUser}`
-                                );
-                                return cookieUser;
-                        }
+                        const message = String(error?.message || "");
+                        const networkFailure = !authenticationFailure && (
+                                [502, 503, 504].includes(status) ||
+                                navigator.onLine === false ||
+                                (status === 0 && (
+                                    error?.name === "TypeError" ||
+                                    /network|failed to fetch|load failed|timeout|connection|offline/i.test(message)
+                                ))
+                        );
 
-                        if (browserOffline && persistentOfflineUser) {
+                        if (networkFailure) {
+                                const cachedUser = persistentOfflineUser || cookieUser;
                                 const hasCachedShift =
                                         typeof localStorage !== "undefined" &&
                                         Boolean(localStorage.getItem("pos_shift_data"));
 
-                                if (hasCachedShift) {
-                                        log.info(
-                                                `Offline cold start: restoring cached user ${persistentOfflineUser}`
+                                if (cachedUser && hasCachedShift) {
+                                        const signedToken =
+                                                getSignedOfflineAuthorization();
+
+                                        if (await verifyOfflineAuthorization(
+                                                signedToken,
+                                                cachedUser
+                                        )) {
+                                                log.info(
+                                                        `Verified offline startup for ${cachedUser}`
+                                                );
+                                                session.offlineRestored = true;
+                                                return cachedUser;
+                                        }
+
+                                        log.warn(
+                                                "Offline startup blocked: valid signed authorization unavailable"
                                         );
-                                        return persistentOfflineUser;
                                 }
                         }
 

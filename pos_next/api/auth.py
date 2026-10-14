@@ -22,3 +22,17 @@ def verify_session_password(password=None):
 		return {"verified": True}
 	except frappe.AuthenticationError:
 		return {"verified": False, "message": _("Incorrect password")}
+
+
+@frappe.whitelist()
+def get_session_user():
+    """Return the authenticated ERPNext session user."""
+    user = frappe.session.user
+
+    if not user or user == "Guest":
+        frappe.throw(
+            _("Authentication required"),
+            frappe.AuthenticationError,
+        )
+
+    return user

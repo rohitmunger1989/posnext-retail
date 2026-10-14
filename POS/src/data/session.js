@@ -4,6 +4,7 @@ import { computed, reactive } from "vue";
 
 import { ensureCSRFToken } from "@/utils/csrf";
 import { cleanupUserSession } from "@/utils/sessionCleanup";
+import { refreshSignedOfflineAuthorization } from "@/utils/offline/offlineAuthorization";
 import { userResource, userData } from "./user";
 
 const OFFLINE_SESSION_USER_KEY = "pos_offline_session_user";
@@ -56,8 +57,13 @@ export const session = reactive({
 			// The auto-refresh interval will also pick this up, but we do it immediately for responsiveness
 			userData.refresh();
 
+			session.offlineRestored = false;
 			session.user = sessionUser();
 			cacheOfflineSessionUser(session.user);
+
+            if (session.user && session.user !== "Guest") {
+                void refreshSignedOfflineAuthorization(session.user);
+            }
 			session.login.reset();
 			// Don't redirect here - let the Login page watcher handle navigation
 			// This prevents conflicts with the shift opening dialog flow
@@ -71,7 +77,8 @@ export const session = reactive({
 		async onSuccess() {
 			await cleanupUserSession();
 			userResource.reset();
-			session.user = sessionUser();
+            session.offlineRestored = false;
+			session.user = null;
 			router.replace({ name: "Login" });
 		},
 		async onError(error) {
@@ -79,10 +86,12 @@ export const session = reactive({
 			// Even if logout fails on server, clear local session
 			await cleanupUserSession();
 			userResource.reset();
+            session.offlineRestored = false;
 			session.user = null;
 			router.replace({ name: "Login" });
 		},
 	}),
+	offlineRestored: false,
 	user: sessionUser(),
 	isLoggedIn: computed(() => !!session.user),
 });

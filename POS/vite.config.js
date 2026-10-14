@@ -43,10 +43,56 @@ function posNextBuildVersionPlugin(version) {
 	};
 }
 
+
+/**
+ * Generate a static POS application shell for offline navigation.
+ * ERPNext's normal /pos page retains its server-rendered boot data.
+ */
+function posNextOfflineShellPlugin() {
+    return {
+        name: "pos-next-offline-shell",
+        apply: "build",
+        async writeBundle() {
+            const outputDir = path.resolve(
+                __dirname,
+                "../pos_next/public/pos"
+            );
+            const sourceFile = path.join(outputDir, "index.html");
+            const destinationFile = path.join(
+                outputDir,
+                "offline-shell.html"
+            );
+
+            let html = await fs.readFile(sourceFile, "utf8");
+
+            const bootScript =
+                /<script>\s*{%\s*for key in boot\s*%}[\s\S]*?{%\s*endfor\s*%}\s*<\/script>/g;
+
+            const matches = html.match(bootScript) || [];
+
+            if (matches.length !== 1) {
+                throw new Error(
+                    `Expected one Jinja boot script; found ${matches.length}`
+                );
+            }
+
+            html = html.replace(bootScript, "");
+
+            if (html.includes("{%") || html.includes("{{")) {
+                throw new Error("Offline shell contains Jinja expressions");
+            }
+
+            await fs.writeFile(destinationFile, html, "utf8");
+            console.log("POSNext offline application shell generated");
+        },
+    };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
 	plugins: [
 		posNextBuildVersionPlugin(buildVersion),
+		posNextOfflineShellPlugin(),
 		frappeui({
 			frappeProxy: true,
 			jinjaBootData: true,
@@ -109,29 +155,48 @@ export default defineConfig({
 				],
 			},
 			workbox: {
+                                navigateFallback: null,
 				globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
 				maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 3 MB
-                                navigateFallback: null,
-				runtimeCaching: [
+                                modifyURLPrefix: {
+                                        "": "/assets/pos_next/pos/",
+                                },
+                                runtimeCaching: [
                                         {
                                                 urlPattern: ({ request, url }) =>
                                                         request.mode === "navigate" &&
-                                                        (url.pathname === "/pos" || url.pathname === "/pos/"),
+                                                        url.origin === self.location.origin &&
+                                                        /^\/pos(?:\/|$)/.test(url.pathname),
                                                 handler: "NetworkFirst",
                                                 options: {
                                                         cacheName: "pos-navigation-cache",
                                                         networkTimeoutSeconds: 5,
-                                                        expiration: {
-                                                                maxEntries: 2,
-                                                                maxAgeSeconds: 60 * 60 * 24,
+                                                        precacheFallback: {
+                                                                fallbackURL: "/assets/pos_next/pos/offline-shell.html",
                                                         },
+                                                        plugins: [
+                                                                {
+                                                                        fetchDidSucceed: async function ({ response }) {
+                                                                                if ([500, 502, 503, 504].includes(response.status)) {
+                                                                                        throw new Error(
+                                                                                                `ERPNext unavailable: HTTP ${response.status}`
+                                                                                        );
+                                                                                }
+                                                                                return response;
+                                                                        },
+                                                                },
+                                                        ],
                                                         cacheableResponse: {
-                                                                statuses: [0, 200],
+                                                                statuses: [200],
+                                                        },
+                                                        expiration: {
+                                                                maxEntries: 5,
+                                                                maxAgeSeconds: 60 * 60 * 24 * 7,
                                                         },
                                                 },
                                         },
-					{
-						urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+                                        {
+                                                urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
 						handler: "CacheFirst",
 						options: {
 							cacheName: "google-fonts-cache",
@@ -184,21 +249,7 @@ export default defineConfig({
 							},
 						},
 					},
-					{
-						urlPattern: /\/api\/.*/i,
-						handler: "NetworkFirst",
-						options: {
-							cacheName: "api-cache",
-							networkTimeoutSeconds: 10,
-							expiration: {
-								maxEntries: 100,
-								maxAgeSeconds: 60 * 60 * 24, // 24 hours
-							},
-							cacheableResponse: {
-								statuses: [0, 200],
-							},
-						},
-					},
+
 				],
 				cleanupOutdatedCaches: true,
 				skipWaiting: true,

@@ -27,6 +27,7 @@ import {
 import { call } from "@/utils/apiWrapper";
 import { logger } from "@/utils/logger";
 import { offlineState } from "@/utils/offline/offlineState";
+import { requireOnlineSession } from "@/utils/offline/requireOnlineSession";
 import { offlineWorker } from "@/utils/offline/workerClient";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -117,11 +118,13 @@ export const usePOSSyncStore = defineStore("posSync", () => {
 	 * @throws {Error} If called while offline
 	 */
 	async function syncPending() {
-		if (isOffline.value) {
-			throw new Error("Cannot sync while offline");
-		}
+                if (isOffline.value) {
+                        throw new Error("Cannot sync while offline");
+                }
 
-		isSyncing.value = true;
+                await requireOnlineSession();
+
+                isSyncing.value = true;
 		try {
 			const result = await syncOfflineInvoices();
 			await updatePendingCount();

@@ -1,3 +1,4 @@
+import { requireOnlineSession } from "./requireOnlineSession";
 import { db } from "./db";
 import { call } from "@/utils/apiWrapper";
 import { generateUUID } from "./uuid";
@@ -137,7 +138,10 @@ const performCustomerSync = async () => {
 export const syncPendingOfflineCustomers = () => {
     if (customerSyncPromise) return customerSyncPromise;
 
-    customerSyncPromise = performCustomerSync().finally(() => {
+    customerSyncPromise = (async () => {
+        await requireOnlineSession();
+        return await performCustomerSync();
+    })().finally(() => {
         customerSyncPromise = null;
     });
 

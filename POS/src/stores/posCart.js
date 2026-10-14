@@ -5,6 +5,7 @@ import { usePOSShiftStore } from "@/stores/posShift";
 import { parseError } from "@/utils/errorHandler";
 import { shouldValidateItemStock, checkStockAvailability } from "@/utils/stockValidator";
 import { offlineState } from "@/utils/offline/offlineState";
+import { requireOnlineSession } from "@/utils/offline/requireOnlineSession";
 import { syncPendingOfflineCustomers, resolveOfflineCustomerId } from "@/utils/offline/customerQueue";
 import { useToast } from "@/composables/useToast";
 import { defineStore } from "pinia";
@@ -316,6 +317,16 @@ export const usePOSCartStore = defineStore("posCart", () => {
 			.filter((o) => o.offer?.one_time_per_customer)
 			.map((o) => o.code)
 			.filter(Boolean);
+        // Offline submissions continue to the local queue. Verify the ERPNext
+        // cashier before any direct online invoice submission.
+        if (!offlineState.isOffline) {
+            try {
+                await requireOnlineSession();
+            } catch (error) {
+                showWarning(error.message || __("ERPNext login required before online checkout"));
+                return null;
+            }
+        }
 		const wasOffline = offlineState.isOffline;
 
 		const result = await baseSubmitInvoice(

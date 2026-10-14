@@ -4,6 +4,7 @@ import { usePOSCartStore } from "@/stores/posCart";
 import { usePOSUIStore } from "@/stores/posUI";
 import { useSessionLock } from "@/composables/useSessionLock";
 import { shiftState } from "@/composables/useShift";
+import { invalidateOfflineAuthorizationRequests } from "@/utils/offline/offlineAuthorization";
 
 // All user-specific localStorage keys that must be cleared on logout.
 // Device-level settings (pos_qz_printer_name, pos_stock_sync_settings,
@@ -11,6 +12,8 @@ import { shiftState } from "@/composables/useShift";
 // are intentionally NOT cleared.
 const USER_KEYS = [
 	"pos_offline_session_user",
+	"pos_offline_authorization_v1",
+	"pos_offline_signed_authorization_v1",
 	"pos_session_lock",
 	"pos_session_pwd_hash",
 	"pos_lock_attempts",
@@ -28,6 +31,7 @@ const USER_KEYS = [
  * lock screen sign-out, or session expiry).
  */
 export async function cleanupUserSession() {
+	invalidateOfflineAuthorizationRequests();
 	// 1. Clear all user-specific localStorage keys
 	for (const key of USER_KEYS) {
 		localStorage.removeItem(key);

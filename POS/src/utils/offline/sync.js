@@ -1,4 +1,5 @@
 import { call } from "@/utils/apiWrapper";
+import { requireOnlineSession } from "./requireOnlineSession";
 import { logger } from "@/utils/logger";
 import { CoalescingMutex } from "@/utils/mutex";
 import { db } from "./db";
@@ -419,6 +420,7 @@ export const syncOfflineInvoices = async () => {
 	}
 
 	return await syncMutex.withLock(async () => {
+        await requireOnlineSession();
 		const customerSyncResult = await syncPendingOfflineCustomers();
 
                 if (customerSyncResult.failed) {
