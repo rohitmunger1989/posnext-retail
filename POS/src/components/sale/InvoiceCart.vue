@@ -2994,30 +2994,50 @@ function handleSearchBlur() {
  * @param {KeyboardEvent} event - Keyboard event from search input
  */
 function handleKeydown(event) {
-	// Customer search owns Enter while focused. Stop it here so the same key press
-	// cannot bubble into barcode/global POS keyboard handlers and reset/change the cart.
-	if (event.key === "Enter") {
-		event.preventDefault();
-		event.stopPropagation();
-		if (selectedIndex.value >= 0 && selectedIndex.value < customerResults.value.length) {
-			selectCustomer(customerResults.value[selectedIndex.value]);
-		} else if (customerResults.value.length === 1) {
-			selectCustomer(customerResults.value[0]);
-		}
-		return;
-	}
+    if (event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
 
-	if (customerResults.value.length === 0) return;
+        if (event.isComposing || event.repeat || !customerSearch.value.trim()) {
+            return;
+        }
 
-	if (event.key === "ArrowDown") {
-		event.preventDefault();
-		selectedIndex.value = Math.min(selectedIndex.value + 1, customerResults.value.length - 1);
-	} else if (event.key === "ArrowUp") {
-		event.preventDefault();
-		selectedIndex.value = Math.max(selectedIndex.value - 1, -1);
-	} else if (event.key === "Escape") {
-		customerSearch.value = "";
-	}
+        if (customerResults.value.length > 0) {
+            const index =
+                selectedIndex.value >= 0 &&
+                selectedIndex.value < customerResults.value.length
+                    ? selectedIndex.value
+                    : 0;
+
+            selectCustomer(customerResults.value[index]);
+        } else {
+            createNewCustomer();
+        }
+
+        return;
+    }
+
+    if (event.key === "Escape") {
+        event.preventDefault();
+        customerSearch.value = "";
+        return;
+    }
+
+    if (customerResults.value.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+        event.preventDefault();
+        selectedIndex.value = Math.min(
+            selectedIndex.value + 1,
+            customerResults.value.length - 1
+        );
+    } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        selectedIndex.value = Math.max(
+            selectedIndex.value - 1,
+            0
+        );
+    }
 }
 
 /**
