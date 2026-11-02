@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:governorate",
  "creation": "2026-06-09 10:54:57.009043",
@@ -24,7 +25,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-09 12:45:46.769004",
+ "modified": "2026-10-17 13:41:16.348624",
  "modified_by": "Administrator",
  "module": "POS Next",
  "name": "Governorate",
