@@ -2447,6 +2447,7 @@ function handleQuickActionDialogVisibility(visible) {
 }
 
 async function handleCustomerSelected(selectedCustomer) {
+	customerDisplayStore.clearCustomerSearchPreview();
 	if (selectedCustomer) {
 		await cartStore.setCustomer(selectedCustomer);
 		await customerDisplayStore.refreshCustomerFinancials(selectedCustomer);
@@ -2481,6 +2482,11 @@ function handleCreateCustomer(searchValue) {
 	uiStore.setInitialCustomerName(searchValue || "");
 	uiStore.showCreateCustomerDialog = true;
 }
+
+// Closing the create form without saving must also clear the temporary number.
+watch(() => uiStore.showCreateCustomerDialog, (isOpen, wasOpen) => {
+	if (wasOpen && !isOpen) customerDisplayStore.clearCustomerSearchPreview();
+});
 
 function handleEditCustomer(customer) {
 	editCustomer.value = customer; // Set customer for edit mode
@@ -4097,6 +4103,7 @@ onUnmounted(() => {
 });
 
 async function handleCustomerCreated(newCustomer) {
+	customerDisplayStore.clearCustomerSearchPreview();
 	cartStore.setCustomer(newCustomer);
 	uiStore.showCreateCustomerDialog = false;
 	editCustomer.value = null; // Clear edit mode

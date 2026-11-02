@@ -62,7 +62,7 @@ export async function verifyOfflineAuthorization(token, expectedUser) {
             payload.user === expectedUser &&
             Number.isSafeInteger(payload.issued_at) &&
             Number.isSafeInteger(payload.expires_at) &&
-            payload.issued_at <= now &&
+            payload.issued_at <= now + 30 &&
             payload.expires_at > now &&
             payload.expires_at > payload.issued_at &&
             payload.expires_at - payload.issued_at <= MAX_VALIDITY_SECONDS
