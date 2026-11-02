@@ -84,6 +84,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	const settingsStore = usePOSSettingsStore();
 	const shiftStore = usePOSShiftStore();
 	const state = ref(null);
+	const customerSearchPreview = ref("");
 	const posProfile = ref("");
 	const paymentSnapshot = ref(null);
 	const paymentActive = ref(false);
@@ -235,6 +236,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			},
 			visibility: visibility(),
 			customer: null,
+			customer_search_preview: mode === "IDLE" ? customerSearchPreview.value : "",
 			current_item: null,
 			items: [],
 			totals: { quantity: 0, subtotal: 0, discount: 0, grand_total: 0 },
@@ -407,6 +409,8 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			: (items.length ? "CART" : "IDLE");
 		const payload = basePayload(mode || defaultMode);
 		payload.customer = buildCustomer();
+		payload.customer_search_preview = (!paymentActive.value && !cartStore.customer)
+			? customerSearchPreview.value : "";
 		if (payload.customer && visibility().customer_credit && paymentCustomerCredit.value !== null) {
 			payload.customer.credit = paymentCustomerCredit.value;
 		}
@@ -478,6 +482,27 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		publish(buildCartPayload());
 	}
 
+	// Temporary, display-only digits. Never changes the selected customer or cart.
+	function setCustomerSearchPreview(query) {
+		const raw = String(query || "").trim();
+		// Only phone-like searches are shown to customers; exclude names and emails.
+		const next = /^[+\d\s().-]+$/.test(raw) && /\d/.test(raw)
+			? raw.slice(0, 32) : "";
+		if (next === customerSearchPreview.value) return;
+		customerSearchPreview.value = next;
+		if (!initialized.value || !isEnabled.value || cartStore.customer || paymentActive.value) return;
+		if (["THANK_YOU", "RETURN", "EXCHANGE"].includes(state.value?.mode)) return;
+		syncCartNow();
+	}
+
+	function clearCustomerSearchPreview() {
+		if (!customerSearchPreview.value) return;
+		customerSearchPreview.value = "";
+		if (!initialized.value || !isEnabled.value) return;
+		if (["THANK_YOU", "RETURN", "EXCHANGE"].includes(state.value?.mode)) return;
+		syncCartNow();
+	}
+
 	function scheduleCartSync() {
 		clearTimeout(syncTimer);
 		syncTimer = setTimeout(syncCartNow, 75);
@@ -542,6 +567,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function showCompleted({ invoice = null, payment = null, mode = null, extra = null } = {}) {
+		customerSearchPreview.value = "";
 		if (!isEnabled.value) return;
 		clearTimeout(thankYouTimer);
 		if (payment) setPayment({ ...payment, is_open: true });
@@ -598,6 +624,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function clearToIdle() {
+		customerSearchPreview.value = "";
 		clearTimeout(thankYouTimer);
 		thankYouTimer = null;
 		completedHoldUntil = 0;
@@ -677,6 +704,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function stop() {
+		customerSearchPreview.value = "";
 		clearTimeout(syncTimer);
 		clearTimeout(thankYouTimer);
 		thankYouTimer = null;
@@ -755,6 +783,8 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		clearToIdle,
 		syncCartNow,
 		scheduleCartSync,
+		setCustomerSearchPreview,
+		clearCustomerSearchPreview,
 		refreshCustomerFinancials,
 		getDisplayUrl,
 		openDisplayWindow,

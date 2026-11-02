@@ -1779,6 +1779,7 @@ import { usePOSSettingsStore } from "@/stores/posSettings";
 import { usePOSShiftStore } from "@/stores/posShift";
 import { usePOSOffersStore } from "@/stores/posOffers";
 import { useCustomerSearchStore } from "@/stores/customerSearch";
+import { useCustomerDisplayStore } from "@/stores/customerDisplay";
 import { DEFAULT_CURRENCY, formatCurrency as formatCurrencyUtil } from "@/utils/currency";
 import { useFormatters } from "@/composables/useFormatters";
 import { useCartSort } from "@/composables/useCartSort";
@@ -1848,6 +1849,7 @@ const settingsStore = usePOSSettingsStore(); // Pinia store for POS settings
 const shiftStore = usePOSShiftStore(); // Current POS opening shift for drawer authorization
 const offersStore = usePOSOffersStore(); // Pinia store for offers/promotions
 const customerSearchStore = useCustomerSearchStore(); // Pinia store for customer search
+const customerDisplayStore = useCustomerDisplayStore();
 const { formatQuantity } = useFormatters(); // Quantity formatting utilities
 const { showSuccess, showError, showWarning } = useToast();
 
@@ -2956,6 +2958,7 @@ const displayGrandTotal = computed(() => {
  */
 function handleSearchInput(event) {
 	customerSearch.value = event.target.value;
+	customerDisplayStore.setCustomerSearchPreview(customerSearch.value);
 }
 
 // Track if customer history has been loaded this session
@@ -3020,6 +3023,7 @@ function handleKeydown(event) {
     if (event.key === "Escape") {
         event.preventDefault();
         customerSearch.value = "";
+        customerDisplayStore.clearCustomerSearchPreview();
         return;
     }
 
@@ -3049,6 +3053,7 @@ function handleKeydown(event) {
 function selectCustomer(cust) {
 	// Track selection for frequent customers feature
 	customerSearchStore.trackCustomerSelection(cust.name);
+	customerDisplayStore.clearCustomerSearchPreview();
 	emit("select-customer", cust);
 	customerSearch.value = "";
 	selectedIndex.value = -1;
@@ -3070,6 +3075,7 @@ async function removeCustomer() {
  * Emits select-customer with null to deselect.
  */
 async function clearCustomer() {
+	customerDisplayStore.clearCustomerSearchPreview();
 	emit("select-customer", null);
 	await nextTick();
 	const searchInput = document.getElementById("cart-customer-search");

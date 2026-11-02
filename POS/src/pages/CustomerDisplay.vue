@@ -42,6 +42,11 @@
 				</div>
 			</header>
 
+			<div v-if="phoneSearchPreview && (mode === 'IDLE' || mode === 'CART')" class="customer-phone-preview" role="status" aria-live="polite">
+				<span class="customer-phone-preview-label">Customer mobile number</span>
+				<strong dir="ltr">{{ phoneSearchPreview }}</strong>
+				<span class="customer-phone-preview-status">Awaiting customer selection</span>
+			</div>
 			<main class="display-main">
 				<section v-if="mode === 'IDLE'" class="idle-screen">
 					<video
@@ -235,6 +240,7 @@ const currentDateTime = computed(() => {
 
 const displayEnabled = computed(() => Boolean(Number(settingsStore.settings.customer_display_enabled || 0)));
 const mode = computed(() => displayState.value?.mode || "IDLE");
+const phoneSearchPreview = computed(() => String(displayState.value?.customer_search_preview || ""));
 const idleMode = computed(() => displayState.value?.idle?.mode || "Welcome");
 const theme = computed(() => settingsStore.settings.customer_display_theme || "Dark");
 const compactDisplay = computed(() => {
@@ -483,6 +489,14 @@ onUnmounted(() => {
 </script>
 
 <style>
+.customer-phone-preview{display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;padding:10px 20px;background:rgba(37,99,235,.13);border-bottom:1px solid rgba(96,165,250,.32);font-variant-numeric:tabular-nums;min-height:54px}
+.customer-phone-preview-label{font-size:13px;opacity:.8}
+.customer-phone-preview strong{font-size:clamp(20px,2.8vw,34px);font-weight:800;letter-spacing:.04em;overflow-wrap:anywhere}
+.customer-phone-preview-status{font-size:12px;opacity:.7}
+.theme-light .customer-phone-preview{background:#eaf2ff;border-bottom-color:#c7dbff}
+.customer-display.is-compact .customer-phone-preview{min-height:38px;padding:5px 12px;gap:9px}
+.customer-display.is-compact .customer-phone-preview strong{font-size:21px}
+
 .customer-display { min-height:100vh; width:100vw; overflow:hidden; font-family:Inter,Arial,sans-serif; background:#0b0b0c; color:#fff; display:flex; flex-direction:column; }
 .theme-light { background:#f7f7f5; color:#111; }
 .display-header { height:82px; padding:18px 32px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.18); }
