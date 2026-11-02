@@ -272,7 +272,7 @@ function handleSearchInput(event) {
 
 // Keyboard navigation
 function handleKeydown(event) {
-	if (customers.value.length === 0) return;
+	if (event.isComposing || event.repeat) return;
 
 	if (event.key === "ArrowDown") {
 		event.preventDefault();
@@ -288,6 +288,8 @@ function handleKeydown(event) {
 			selectCustomer(customers.value[selectedIndex.value]);
 		} else if (customers.value.length === 1) {
 			selectCustomer(customers.value[0]);
+		} else if (customers.value.length === 0 && !loading.value && searchTerm.value.trim()) {
+			createNewCustomer();
 		}
 	} else if (event.key === "Escape") {
 		show.value = false;

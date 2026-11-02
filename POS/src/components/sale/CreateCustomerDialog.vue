@@ -7,18 +7,20 @@
 		}"
 	>
 		<template #body-content>
-			<div class="flex flex-col gap-6">
+			<div class="flex flex-col gap-6" @keydown.enter="handleFormEnter">
 				<!-- Customer Name (Required) -->
 				<div>
 					<label class="block text-start text-sm font-medium text-gray-700 mb-2">
 						{{ __("Customer Name") }} <span class="text-red-500">*</span>
 					</label>
+					<div ref="customerNameContainer">
 					<Input
 						v-model="customerData.customer_name"
 						type="text"
 						:placeholder="__('Enter customer name')"
 						required
 					/>
+					</div>
 				</div>
 
 				<!-- Mobile Number with Country Code Selector -->
@@ -255,7 +257,7 @@
 							updateCustomerResource.loading ||
 							checkingPermission
 						"
-						:disabled="!customerData.customer_name || !phoneNumber || !hasPermission"
+						:disabled="!customerData.customer_name || !phoneNumber || !hasPermission || isSubmitting"
 					>
 						{{ isEditMode ? __("Save Changes") : __("Create Customer") }}
 					</Button>
@@ -325,6 +327,8 @@ const showCountryDropdown = ref(false);
 const countrySearchQuery = ref("");
 const dropdownRef = ref(null);
 const countrySearchRef = ref(null);
+const customerNameContainer = ref(null);
+const isSubmitting = ref(false);
 
 const customerGroups = ref([]);
 const territories = ref([]);
@@ -751,7 +755,7 @@ const applyInitialSearchPrefill = (rawValue) => {
 		.replace(/\s{2,}/g, " ")
 		.trim();
 
-	customerData.value.customer_name = detectedName;
+	customerData.value.customer_name = detectedName || detectedPhone;
 
 	if (detectedCountryISD) {
 		selectedCountryCode.value = detectedCountryISD;
@@ -919,7 +923,16 @@ const checkPermissions = async () => {
     }
 };
 
+const handleFormEnter = (event) => {
+    if (event.isComposing || event.repeat || showCountryDropdown.value) return;
+    const target = event.target;
+    if (target?.closest?.("button, select, textarea, [role='listbox'], [role='combobox']")) return;
+    event.preventDefault();
+    if (!checkingPermission.value) void handleCreate();
+};
+
 const handleCreate = async () => {
+    if (isSubmitting.value || createCustomerResource.loading || updateCustomerResource.loading || checkingPermission.value) return;
     if (!hasPermission.value || !getPermissionUser()) {
         return showError(__("Customer creation permission is required"));
     }
@@ -932,6 +945,8 @@ const handleCreate = async () => {
         return showError(__("Mobile Number is required"));
     }
 
+    isSubmitting.value = true;
+    try {
     // Editing existing customers still requires ERPNext.
     if (isEditMode.value) {
         if (offlineState.isOffline || !navigator.onLine) {
@@ -964,6 +979,9 @@ const handleCreate = async () => {
 
     // Preserve normal online customer creation.
     await createCustomerResource.submit();
+    } finally {
+        isSubmitting.value = false;
+    }
 };
 
 const resetForm = () => {
@@ -1070,7 +1088,17 @@ watch(showCountryDropdown, async (isOpen) => {
 watch(
 	() => props.modelValue,
 	async (isOpen) => {
-		isOpen ? await loadDialogData() : resetForm();
+		if (isOpen) {
+			await loadDialogData();
+			await nextTick();
+			if (show.value && !isEditMode.value) {
+				const input = customerNameContainer.value?.querySelector("input");
+				input?.focus();
+				input?.select();
+			}
+		} else {
+			resetForm();
+		}
 	}
 );
 
