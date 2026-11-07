@@ -1127,6 +1127,13 @@ def update_invoice(data):
 		pos_profile = data.get("pos_profile")
 		doctype = data.get("doctype", "Sales Invoice")
 
+		if data.get("custom_transaction_remark") and not frappe.get_meta(doctype).has_field(
+			"custom_transaction_remark"
+		):
+			frappe.throw(_(
+				"Transaction Remark field is missing. Run bench migrate before submitting this invoice."
+			))
+
 		# Ensure the document type is set
 		data.setdefault("doctype", doctype)
 

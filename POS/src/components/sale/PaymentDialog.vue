@@ -528,11 +528,26 @@
 								>
 									{{ __("Invoice Summary") }}
 								</h3>
-								<span class="text-gray-500 text-xs text-end">{{
-									items.length === 1
-										? __("1 item")
-										: __("{0} items", [items.length])
-								}}</span>
+
+<div class="flex flex-wrap items-center justify-end gap-1.5">
+    <span class="rounded-md border border-purple-200 bg-purple-100 px-2 py-1 text-xs font-bold text-purple-800">
+        {{ __("Items") }}: {{ items.length }}
+    </span>
+    <span class="rounded-md border border-blue-200 bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800">
+        {{ __("Total Qty") }}: {{ invoiceSummaryTotalQty }}
+    </span>
+</div>
+
+                                <button
+                                    type="button"
+                                    class="shrink-0 rounded-md border border-purple-300 bg-white px-2 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-50"
+                                    :aria-expanded="invoiceSummaryExpanded"
+                                    aria-controls="payment-invoice-items"
+                                    @click="invoiceSummaryExpanded = !invoiceSummaryExpanded"
+                                >
+                                    {{ invoiceSummaryExpanded ? __("Hide") : __("Expand") }}
+                                </button>
+
 							</div>
 							<div v-if="customer" class="text-gray-600 text-xs mt-0.5 text-start">
 								{{ customer?.customer_name || customer?.name || customer }}
@@ -595,7 +610,8 @@
 							</div>
 						</div>
 
-						<!-- Items List (scrollable, takes available space) -->
+						<div id="payment-invoice-items" v-show="invoiceSummaryExpanded" class="shrink-0 overflow-y-auto" style="max-height: min(28vh, 240px)">
+<!-- Items List (scrollable, takes available space) -->
 						<div
 							v-if="items.length > 0"
 							class="flex-1 overflow-y-auto divide-y divide-gray-100 min-h-0"
@@ -684,6 +700,25 @@
 							class="flex-1 px-3 py-4 text-center text-gray-400 text-sm flex items-center justify-center"
 						>
 							{{ __("No items") }}
+						</div>
+
+
+</div>
+<!-- Optional cashier note, stored separately from ERPNext audit remarks. -->
+						<div class="mx-2 my-2 rounded-lg border-2 border-purple-300 bg-purple-50 p-2">
+							<label for="pos-transaction-remark" class="block text-xs font-medium text-purple-700 mb-1">
+								{{ __("Transaction Remark") }}
+								<span class="font-normal text-purple-500">({{ __("Optional") }})</span>
+							</label>
+							<textarea
+								id="pos-transaction-remark"
+								v-model="transactionRemarkInput"
+								rows="2"
+								:disabled="isSubmitting"
+								:placeholder='__("e.g. Discount approved by manager")'
+								class="block w-full rounded-lg border border-purple-300 bg-white px-2 py-1.5 text-sm resize-none focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+								@keydown.stop
+							/>
 						</div>
 
 						<!-- Amounts Breakdown -->
@@ -2065,10 +2100,19 @@ import { useQuickAmounts } from "@/composables/useQuickAmounts";
 
 const log = logger.create("PaymentDialog");
 const settingsStore = usePOSSettingsStore();
+const invoiceSummaryExpanded = ref(false);
+const invoiceSummaryTotalQty = computed(() =>
+    (props.items || []).reduce((total, item) => {
+        const qty = Number(item.quantity ?? item.qty ?? 0);
+        return total + (Number.isFinite(qty) ? qty : 0);
+    }, 0)
+);
+
 const { showWarning, showInfo } = useToast();
 
 const props = defineProps({
 	modelValue: Boolean,
+	transactionRemark: { type: String, default: "" },
 	grandTotal: {
 		type: Number,
 		default: 0,
@@ -2164,11 +2208,17 @@ const props = defineProps({
 const emit = defineEmits([
 	"update:modelValue",
 	"payment-completed",
+	"update-transaction-remark",
 	"payment-updated",
 	"update-additional-discount",
 	"show-offers",
 	"show-coupon",
 ]);
+
+const transactionRemarkInput = computed({
+	get: () => props.transactionRemark,
+	set: (value) => emit("update-transaction-remark", value),
+});
 
 const show = computed({
 	get: () => props.modelValue,
@@ -3174,6 +3224,7 @@ watch(
 
 watch(show, (newVal) => {
 	if (newVal) {
+		invoiceSummaryExpanded.value = false;
 		autoCustomerCreditApplied.value = false;
 		// Reset state when dialog opens (but NOT customerBalance - it's pre-fetched)
 		paymentEntries.value = [];
@@ -3698,6 +3749,7 @@ function addCreditAccountPayment() {
 	// Close dialog and complete as credit sale (0 payment)
 	// The backend will create an invoice with outstanding amount
 	const paymentData = {
+		custom_transaction_remark: props.transactionRemark.trim(),
 		payments: [], // No payments - full amount on credit
 		change_amount: 0,
 		is_partial_payment: false,
@@ -3755,6 +3807,7 @@ function completePayment() {
 	const outstanding = isPartial ? roundCurrency(props.grandTotal - effectivePaid) : 0;
 
 	const paymentData = {
+		custom_transaction_remark: props.transactionRemark.trim(),
 		payments: paymentEntries.value,
 		change_amount: changeAmount.value,
 		is_partial_payment: isPartial,

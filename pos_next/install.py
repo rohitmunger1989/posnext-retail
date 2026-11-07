@@ -24,6 +24,8 @@ def after_install():
 	try:
 		log_message("POS Next: Running post-install setup", level="info")
 
+		setup_transaction_remark_fields()
+
 		# Setup default print format for POS Profiles
 		setup_default_print_format()
 
@@ -47,6 +49,8 @@ def after_migrate():
 		# doctype sync runs after pos_next's and would overwrite anything we did
 		# during pre/post-model-sync.
 		reclaim_pos_settings_doctype(quiet=True)
+
+		setup_transaction_remark_fields()
 
 		# Setup default print format
 		setup_default_print_format(quiet=True)
@@ -223,3 +227,34 @@ def reclaim_pos_settings_doctype(quiet=False):
 			f"POS Settings reclaimed (module={after.module}, issingle={after.issingle})",
 			level="success",
 		)
+
+
+def setup_transaction_remark_fields():
+	"""Create optional cashier notes on install/migrate, without replacing existing data.
+
+	The payment dialog also supports Sales Orders. Keep the same field there so
+	switching checkout type does not silently discard a cashier's note.
+	"""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	fields = {}
+	for doctype in ("Sales Invoice", "Sales Order"):
+		meta = frappe.get_meta(doctype)
+		existing = meta.get_field("custom_transaction_remark")
+		if existing:
+			if existing.fieldtype not in ("Small Text", "Text", "Long Text"):
+				frappe.throw(
+					f"{doctype}.custom_transaction_remark must be a text field. "
+					"Existing field was left unchanged; review its configuration before migrating."
+				)
+			continue
+		fields[doctype] = [{
+			"fieldname": "custom_transaction_remark",
+			"label": "Transaction Remark",
+			"fieldtype": "Small Text",
+			"insert_after": "remarks" if meta.has_field("remarks") else "customer",
+			"description": "Optional cashier note entered during POSNext payment.",
+			"no_copy": 1,
+		}]
+	if fields:
+		create_custom_fields(fields)

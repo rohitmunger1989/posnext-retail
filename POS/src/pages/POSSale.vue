@@ -539,6 +539,8 @@
 			<!-- Payment Dialog -->
 			<PaymentDialog
 				v-model="uiStore.showPaymentDialog"
+				:transaction-remark="cartStore.transactionRemark"
+				@update-transaction-remark="cartStore.transactionRemark = $event"
 				:grand-total="cartStore.grandTotal"
 				:subtotal="cartStore.subtotal"
 				:pos-profile="shiftStore.profileName"
@@ -1233,6 +1235,7 @@ function saveActiveCartRecovery() {
 			items: JSON.parse(JSON.stringify(cartStore.invoiceItems)),
 			customer: rawCustomer ? JSON.parse(JSON.stringify(rawCustomer)) : null,
 			additional_discount: Number(cartStore.additionalDiscount || 0),
+			custom_transaction_remark: cartStore.transactionRemark || "",
 		};
 		localStorage.setItem(cartRecoveryKey(profile), JSON.stringify(snapshot));
 	} catch (error) {
@@ -1264,6 +1267,7 @@ async function restoreActiveCartRecovery(profile, { verify = false } = {}) {
 
 		cartStore.invoiceItems = JSON.parse(JSON.stringify(snapshot.items));
 		cartStore.additionalDiscount = Number(snapshot.additional_discount || 0);
+		cartStore.transactionRemark = snapshot.custom_transaction_remark || "";
 		cartStore.rebuildIncrementalCache();
 		restored = cartStore.invoiceItems.length > 0;
 		if (!restored) return false;
@@ -1369,6 +1373,7 @@ watch(
 		})),
 		customer: cartStore.customer?.name || cartStore.customer?.customer || cartStore.customer || null,
 		additional_discount: Number(cartStore.additionalDiscount || 0),
+		custom_transaction_remark: cartStore.transactionRemark || "",
 	}),
 	() => saveActiveCartRecovery(),
 	{ flush: "sync" }
@@ -2773,6 +2778,7 @@ function buildPaymentHubInvoicePayload(customerValue, paymentData, cartReference
 		currency: shiftStore.profileCurrency,
 		items: cartStore.formatItemsForSubmission(cartStore.invoiceItems),
 		payments: [],
+		custom_transaction_remark: paymentData.custom_transaction_remark ?? cartStore.transactionRemark,
 		sales_team: JSON.parse(JSON.stringify(paymentData.sales_team || cartStore.salesTeam || [])),
 		discount_amount: cartStore.additionalDiscount || 0,
 		coupon_code: cartStore.appliedCoupon?.name || "",
@@ -3274,6 +3280,7 @@ async function handlePaymentCompleted(paymentData) {
 			return;
 		}
 
+		cartStore.transactionRemark = String(paymentData.custom_transaction_remark ?? cartStore.transactionRemark ?? "").trim();
 		customerDisplayStore.setPayment(paymentData);
 
 		cartStore.payments = [];
@@ -3339,6 +3346,7 @@ async function handlePaymentCompleted(paymentData) {
 				items: preparedItems,
 				payments: JSON.parse(JSON.stringify(cartStore.payments)),
 				sales_team: JSON.parse(JSON.stringify(cartStore.salesTeam || [])),
+				custom_transaction_remark: cartStore.transactionRemark,
 				grand_total: cartStore.grandTotal,
 				total_tax: cartStore.totalTax,
 				total_discount: cartStore.totalDiscount,
@@ -3881,7 +3889,8 @@ async function handleSaveDraft() {
 		cartStore.customer,
 		cartStore.posProfile,
 		cartStore.appliedOffers,
-		cartStore.currentDraftId
+		cartStore.currentDraftId,
+		cartStore.transactionRemark
 	);
 	if (savedDraft) {
 		discardActiveCartRecovery();
@@ -3900,7 +3909,8 @@ async function handleLoadDraft(draft) {
 				cartStore.customer,
 				cartStore.posProfile,
 				cartStore.appliedOffers,
-				cartStore.currentDraftId
+				cartStore.currentDraftId,
+				cartStore.transactionRemark
 			);
 
 			if (!saved) {
@@ -3916,6 +3926,7 @@ async function handleLoadDraft(draft) {
 
 		const draftData = await draftsStore.loadDraft(draft);
 		cartStore.invoiceItems = draftData.items;
+		cartStore.transactionRemark = draftData.custom_transaction_remark || "";
 		cartStore.setCustomer(draftData.customer);
 		cartStore.currentDraftId = draft.draft_id; // Set current draft ID
 
@@ -4236,6 +4247,7 @@ async function handleEditOfflineInvoice(invoice) {
 		cartStore.clearCart();
 
 		const invoiceData = invoice.data;
+		cartStore.transactionRemark = invoiceData.custom_transaction_remark || "";
 
 		if (invoiceData.customer) {
 			cartStore.setCustomer(invoiceData.customer);

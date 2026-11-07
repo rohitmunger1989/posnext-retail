@@ -23,6 +23,7 @@ export function useInvoice() {
 	const invoiceItems = ref([]);
 	const customer = ref(null);
 	const payments = ref([]);
+	const transactionRemark = ref("");
 	const salesTeam = ref([]); // Sales team for Sales Invoice
 	const posProfile = ref(null);
 	const posOpeningShift = ref(null); // POS Opening Shift name
@@ -1055,6 +1056,7 @@ export function useInvoice() {
 
 				const invoiceData = {
 					doctype: targetDoctype,
+					custom_transaction_remark: transactionRemark.value.trim(),
 					pos_profile: posProfile.value,
 					posa_pos_opening_shift: posOpeningShift.value,
 					customer: customer.value?.name || customer.value,
@@ -1234,6 +1236,7 @@ export function useInvoice() {
 	 * If a POS Profile is active and has a default customer, it will be pre-selected.
 	 */
 	function resetInvoice() {
+		transactionRemark.value = "";
 		invoiceItems.value = [];
 		payments.value = [];
 		additionalDiscount.value = 0;
@@ -1261,6 +1264,7 @@ export function useInvoice() {
 			}
 		}
 
+		transactionRemark.value = "";
 		invoiceItems.value = [];
 		payments.value = [];
 		additionalDiscount.value = 0;
@@ -1336,6 +1340,7 @@ export function useInvoice() {
 		customer,
 		payments,
 		salesTeam,
+		transactionRemark,
 		posProfile,
 		posOpeningShift,
 		additionalDiscount,

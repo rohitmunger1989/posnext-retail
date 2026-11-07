@@ -40,7 +40,8 @@ export const usePOSDraftsStore = defineStore("posDrafts", () => {
 		customer,
 		posProfile,
 		appliedOffers = [],
-		draftId = null
+		draftId = null,
+		transactionRemark = ""
 	) {
 		if (invoiceItems.length === 0) {
 			showWarning(__("Cannot save an empty cart as draft"));
@@ -50,6 +51,7 @@ export const usePOSDraftsStore = defineStore("posDrafts", () => {
 		try {
 			const draftData = {
 				pos_profile: posProfile,
+				custom_transaction_remark: transactionRemark,
 				customer: customer,
 				items: invoiceItems,
 				applied_offers: appliedOffers, // Save applied offers
@@ -80,6 +82,7 @@ export const usePOSDraftsStore = defineStore("posDrafts", () => {
 
 			return {
 				items: draft.items || [],
+				custom_transaction_remark: draft.custom_transaction_remark || "",
 				customer: draft.customer,
 				applied_offers: draft.applied_offers || [], // Restore applied offers
 			};
