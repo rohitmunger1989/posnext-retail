@@ -1188,6 +1188,7 @@
 		<template #actions>
 			<div class="flex flex-col w-full gap-2">
 				<p v-if="submitError" class="text-xs text-red-600">{{ submitError }}</p>
+				<p v-if="refundRetryBlockedReason" class="text-xs text-amber-800" role="status">{{ refundRetryBlockedReason }}</p>
 				<div
 					class="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full gap-2 sm:gap-3"
 				>
@@ -1219,16 +1220,19 @@
 							variant="solid"
 							theme="red"
 							@click="handleCreateReturn"
-							:disabled="!canCreateReturn || isSubmitting"
+							:disabled="!canCreateReturn || isSubmitting || Boolean(refundRetryBlockedReason)"
+							:title="refundRetryBlockedReason"
 							:loading="isSubmitting"
 							class="flex-1 sm:flex-initial"
 						>
 							<span class="text-sm whitespace-nowrap">{{
-								hasRetryableFailedRefund
+								hasIncompletePaymentHubRefund
 									? __("Retry Refund")
-									: paymentHubManaged
-										? __("Refund & Create Return")
-										: __("Create Return")
+									: hasExistingPaymentHubRefund && returnRefundStatus?.all_complete
+										? __("Complete Return")
+										: paymentHubManaged
+											? __("Refund & Create Return")
+											: __("Create Return")
 							}}</span>
 						</Button>
 					</div>
@@ -2380,6 +2384,27 @@ const hasRetryableFailedRefund = computed(() =>
 	)
 );
 
+const hasExistingPaymentHubRefund = computed(() =>
+	Boolean(
+		paymentHubManaged.value && returnDraftDoc.value?.name &&
+		returnRefundStatus.value?.managed && returnRefundStatus.value?.rows?.length
+	)
+);
+const hasIncompletePaymentHubRefund = computed(() =>
+	Boolean(hasExistingPaymentHubRefund.value && !returnRefundStatus.value?.all_complete)
+);
+const refundRetryBlockedReason = computed(() => {
+	if (!hasIncompletePaymentHubRefund.value) return "";
+	if (Number(returnDraftDoc.value?.docstatus) !== 0) {
+		return __("Refund retry requires a Draft return invoice.");
+	}
+	if (hasRetryableFailedRefund.value) return "";
+	if (returnRefundStatus.value?.rows?.some((row) => row?.status === "Manual Review")) {
+		return __("Retry is unavailable until the previous refund outcome is confirmed. Use Check Refund and review the provider before retrying.");
+	}
+	return __("The refund is awaiting provider confirmation. Use Check Refund; retry becomes available if the request is confirmed failed.");
+});
+
 const hasRefundOverride = computed(() =>
 	refundPayments.value.some(
 		(payment) => payment.override_to_cash && Number(payment.amount || 0) > 0
@@ -2889,8 +2914,24 @@ async function handleCheckRefund() {
 	}
 }
 
+async function retryExistingPaymentHubRefund() {
+	if (!hasIncompletePaymentHubRefund.value || !hasRetryableFailedRefund.value || refundRetryBlockedReason.value) return;
+	const status = await call("erpnext_payment_hub.pos.refund.retry_failed_return_refunds", {
+		return_invoice: returnDraftDoc.value.name,
+	});
+	returnRefundStatus.value = status;
+	if (status?.all_complete) {
+		await submitPaymentHubReturnDraft();
+	} else if (status?.rows?.some((row) => row?.can_retry || row?.status === "Failed")) {
+		showWarning(__("Refund failed with the provider. Retry Refund is available after correcting the error."));
+	} else {
+		showWarning(__("Refund is awaiting confirmation. Use Check Refund before retrying."));
+	}
+	return status;
+}
+
 async function handleCreateReturn() {
-	if (!canCreateReturn.value || isSubmitting.value) return;
+	if (!canCreateReturn.value || isSubmitting.value || refundRetryBlockedReason.value) return;
 	if (!hasOpenShift.value) {
 		const message = __("Open a shift before creating a return invoice.");
 		submitError.value = message;
@@ -2906,6 +2947,14 @@ async function handleCreateReturn() {
 	isSubmitting.value = true;
 
 	try {
+		if (!isExchangeCreditMode.value && hasExistingPaymentHubRefund.value) {
+			if (returnRefundStatus.value?.all_complete) {
+				await submitPaymentHubReturnDraft();
+			} else {
+				await retryExistingPaymentHubRefund();
+			}
+			return;
+		}
 		if (!isExchangeCreditMode.value && paymentHubManaged.value) {
 			await handlePaymentHubReturn();
 			return;
