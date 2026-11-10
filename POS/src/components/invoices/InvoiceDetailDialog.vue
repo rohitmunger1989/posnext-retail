@@ -114,7 +114,7 @@
 							<div v-if="hasCheckableRefund || hasIncompleteRefund || canCompleteRefundedReturn" class="mt-3 flex flex-wrap gap-2">
 								<Button v-if="hasCheckableRefund" variant="subtle" :loading="refundActionLoading" :disabled="refundActionLoading" @click="handleCheckRefundFromDetails">{{ __('Check Refund') }}</Button>
 								<Button v-if="hasIncompleteRefund" variant="solid" theme="red" :loading="refundActionLoading" :disabled="refundActionLoading || !canRetryRefundFromDetails" :title="refundRetryBlockedReason" @click="handleRetryRefundFromDetails">{{ __('Retry Refund') }}</Button>
-								<Button v-if="canCompleteRefundedReturn" variant="solid" :loading="refundActionLoading" :disabled="refundActionLoading" @click="handleCompleteRefundedReturn">{{ __('Complete Return') }}</Button>
+								<Button v-if="canCompleteRefundedReturn" variant="solid" :loading="refundActionLoading" :disabled="refundActionLoading" @click="handleCompleteRefundedReturn">{{ __('Submit Return') }}</Button>
 							</div>
 							<p v-if="refundRetryBlockedReason" class="mt-2 text-xs text-amber-800" role="status">{{ refundRetryBlockedReason }}</p>
 						</div>
@@ -391,7 +391,7 @@
 							<div
 								v-for="(payment, idx) in paymentHistoryRows"
 								:key="payment.key || idx"
-								class="flex justify-between items-center p-3 bg-green-50 border border-green-200 rounded-lg"
+								:class="['flex justify-between items-center p-3 border rounded-lg', paymentHubRefundInfo?.managed && !paymentHubRefundInfo.all_complete ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200']"
 							>
 								<div class="text-start min-w-0">
 									<div class="text-sm font-medium text-gray-900">
@@ -470,7 +470,7 @@
 							</div>
 
 							<div v-if="grossTenderedAmount > 0" class="flex justify-between text-sm">
-								<span class="text-gray-600">{{ __("Tendered / Paid:") }}</span>
+								<span class="text-gray-600">{{ paymentHubRefundInfo?.managed ? __('Refund instruction recorded:') : __('Tendered / Paid:') }}</span>
 								<span class="font-semibold text-green-600">{{
 									formatCurrency(grossTenderedAmount)
 								}}</span>
@@ -483,7 +483,11 @@
 								}}</span>
 							</div>
 
-							<div v-if="netSettledAmount > 0" class="flex justify-between text-sm">
+							<div v-if="paymentHubRefundInfo?.managed" class="text-sm space-y-1">
+								<div class="flex justify-between"><span>{{ __('Refund processing:') }}</span><span>{{ formatCurrency(paymentHubRefundInfo.refund_processing_amount || 0) }}</span></div>
+								<div class="flex justify-between"><span>{{ __('Refund completed:') }}</span><span>{{ formatCurrency(paymentHubRefundInfo.refund_completed_amount || 0) }}</span></div>
+							</div>
+							<div v-if="netSettledAmount > 0 && !paymentHubRefundInfo?.managed" class="flex justify-between text-sm">
 								<span class="text-gray-600">{{ __("Net Settled:") }}</span>
 								<span class="font-semibold text-gray-900">{{
 									formatCurrency(netSettledAmount)
@@ -619,14 +623,14 @@ const canRetryRefundFromDetails = computed(() =>
 	Boolean(
 		hasIncompleteRefund.value &&
 		hasRetryableFailedRefund.value &&
-		Number(invoiceData.value?.docstatus) === 0
+		[0, 1].includes(Number(invoiceData.value?.docstatus))
 	)
 );
 
 const refundRetryBlockedReason = computed(() => {
 	if (!hasIncompleteRefund.value) return "";
-	if (Number(invoiceData.value?.docstatus) !== 0) {
-		return __("Refund retry requires a Draft return invoice.");
+	if (![0, 1].includes(Number(invoiceData.value?.docstatus))) {
+		return __("Refund retry requires a Draft or Submitted return invoice.");
 	}
 	if (hasRetryableFailedRefund.value) return "";
 	if (paymentHubRefundInfo.value?.rows?.some((row) => row?.status === "Manual Review")) {
@@ -647,7 +651,7 @@ const hasCheckableRefund = computed(() =>
 
 const canCompleteRefundedReturn = computed(() =>
 	Boolean(
-		paymentHubRefundInfo.value?.all_complete &&
+		(paymentHubRefundInfo.value?.all_complete || paymentHubRefundInfo.value?.can_submit_return) &&
 			Number(invoiceData.value?.docstatus || 0) === 0
 	)
 );
@@ -838,8 +842,13 @@ async function refreshRefundInfo() {
 }
 
 function refundStatusMessage(status) {
+	if (status?.can_submit_return && !status?.all_complete) {
+		return __("Refund accepted and processing. Submit Return to print the customer receipt; bank settlement is not yet confirmed.");
+	}
 	if (status?.all_complete) {
-		return __("Refund completed. Complete the Draft return invoice to finish the return.");
+		return Number(invoiceData.value?.docstatus) === 1
+			? __("Refund completed. The return invoice is already submitted.")
+			: __("Refund completed. Submit Return to finish the return.");
 	}
 	if (status?.rows?.some((row) => row?.status === "Failed" || row?.can_retry)) {
 		return __("Refund failed with the provider. Retry Refund is available.");
@@ -905,11 +914,11 @@ async function handleCompleteRefundedReturn() {
 			data: JSON.stringify({}),
 		});
 		await loadInvoiceDetails();
-		refundActionMessage.value = __("Refund completed and return invoice submitted successfully.");
+		refundActionMessage.value = __("Return invoice submitted. Refund settlement is tracked separately.");
 	} catch (error) {
 		refundActionError.value =
 			error?.message ||
-			__("Refund is completed, but the return invoice could not be submitted.");
+			__("The return invoice could not be submitted. The existing refund request was not resent.");
 	} finally {
 		refundActionLoading.value = false;
 	}

@@ -2122,6 +2122,16 @@ def submit_invoice(invoice=None, data=None):
 			"change_amount": getattr(invoice_doc, "change_amount", 0),
 		}
 
+		result["docstatus"] = invoice_doc.docstatus
+		result["is_return"] = invoice_doc.get("is_return")
+		result["return_against"] = invoice_doc.get("return_against")
+		if invoice_doc.get("is_return"):
+			from pos_next.api.refund_receipt import refund_context
+			context = refund_context(invoice_doc)
+			if context:
+				result["_payment_hub_refund"] = context["info"]
+				result["_payment_hub_refund_notice_html"] = context["notice"]
+
 		# Include offline_id in response for client-side tracking
 		if offline_id:
 			result["offline_id"] = offline_id
@@ -2167,6 +2177,13 @@ def get_invoice(invoice_name):
 	# Get invoice document
 	invoice = frappe.get_doc("Sales Invoice", invoice_name)
 	invoice_data = invoice.as_dict()
+
+	if invoice.is_return:
+		from pos_next.api.refund_receipt import refund_context
+		context = refund_context(invoice)
+		if context:
+			invoice_data["_payment_hub_refund"] = context["info"]
+			invoice_data["_payment_hub_refund_notice_html"] = context["notice"]
 
 	# Keep the original Sales Invoice Payment rows as the gross POS tender audit
 	# (important for Cash Received / Change), and also expose Payment Ledger history

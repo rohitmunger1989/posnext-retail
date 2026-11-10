@@ -245,10 +245,11 @@ export function buildReceiptHTML(invoiceData) {
 			<div class="receipt">
 				<div class="header">
 					<div class="company-name">${invoiceData.company || "POS Next"}</div>
-					<div style="font-size: 12px;">${invoiceData.header || __("TAX INVOICE")}</div>
+					<div style="font-size: 12px;">${invoiceData.header || (invoiceData.is_return ? __("RETURN INVOICE") : __("TAX INVOICE"))}</div>
 				</div>
 
 				${invoiceData._posnext_duplicate ? DUPLICATE_BANNER_HTML : ""}
+				${invoiceData._payment_hub_refund_notice_html || ""}
 
 				${invoiceData.is_offline ? `<div class="offline-badge">${__("OFFLINE — PENDING SYNC")}</div>` : ""}
 
@@ -326,7 +327,7 @@ export function buildReceiptHTML(invoiceData) {
 								}:</span><span>${formatCurrency(p.amount)}</span></div>`
 						)
 						.join("")}
-					<div class="payment-row total-paid"><span>${__("Total Paid:")}</span><span>${formatCurrency(
+					<div class="payment-row total-paid"><span>${invoiceData._payment_hub_refund ? __("Refund instruction recorded:") : __("Total Paid:")}</span><span>${formatCurrency(
 								paidAmount
 						  )}</span></div>
 					${
@@ -450,7 +451,7 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 		// banner works with any selected POS print format without changing the
 		// user's custom receipt template. Original checkout prints keep the normal
 		// /printview flow unchanged.
-		if (isDuplicate) {
+		if (isDuplicate || invoiceData.is_return) {
 			const printWindow = window.open("", "_blank", "width=800,height=600");
 			if (!printWindow) {
 				throw new Error("Popup blocked — check your browser settings.");
@@ -465,7 +466,7 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 				};
 				if (letterhead) args.letterhead = letterhead;
 
-				const result = await call("frappe.www.printview.get_html_and_style", args);
+				const result = await call("pos_next.api.refund_receipt.get_html_and_style", args);
 				const html = result?.html || result?.message?.html;
 				const style = result?.style || result?.message?.style || "";
 				if (!html) throw new Error("Failed to get print HTML from server");
@@ -473,7 +474,7 @@ export async function printInvoice(invoiceData, printFormat = null, letterhead =
 				printWindow.document.write(`<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><style>${style}</style></head>
-<body>${addDuplicateBanner(html, true)}</body>
+<body>${addDuplicateBanner(html, isDuplicate)}</body>
 </html>`);
 				printWindow.document.close();
 				printWindow.onload = () => {
@@ -557,12 +558,12 @@ async function fetchPrintPDF(doctype, name, printFormat) {
 	const params = new URLSearchParams({
 		doctype,
 		name,
-		format: printFormat,
+		print_format: printFormat,
 		no_letterhead: "1",
 	});
 
 	const response = await fetch(
-		`/api/method/frappe.utils.print_format.download_pdf?${params.toString()}`,
+		`/api/method/pos_next.api.refund_receipt.download_pdf?${params.toString()}`,
 		{
 			method: "GET",
 			credentials: "include",
@@ -600,7 +601,7 @@ export async function silentPrintDoc(doctype, name, printFormat, isDuplicate = f
 		return true;
 	}
 
-	const result = await call("frappe.www.printview.get_html_and_style", {
+	const result = await call("pos_next.api.refund_receipt.get_html_and_style", {
 		doc: doctype,
 		name,
 		print_format: printFormat,

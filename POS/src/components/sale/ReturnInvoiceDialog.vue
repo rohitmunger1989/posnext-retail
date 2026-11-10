@@ -1228,7 +1228,7 @@
 							<span class="text-sm whitespace-nowrap">{{
 								hasIncompletePaymentHubRefund
 									? __("Retry Refund")
-									: hasExistingPaymentHubRefund && returnRefundStatus?.all_complete
+									: hasExistingPaymentHubRefund && (returnRefundStatus?.all_complete || returnRefundStatus?.can_submit_return)
 										? __("Complete Return")
 										: paymentHubManaged
 											? __("Refund & Create Return")
@@ -2391,7 +2391,7 @@ const hasExistingPaymentHubRefund = computed(() =>
 	)
 );
 const hasIncompletePaymentHubRefund = computed(() =>
-	Boolean(hasExistingPaymentHubRefund.value && !returnRefundStatus.value?.all_complete)
+	Boolean(hasExistingPaymentHubRefund.value && !returnRefundStatus.value?.all_complete && !returnRefundStatus.value?.can_submit_return)
 );
 const refundRetryBlockedReason = computed(() => {
 	if (!hasIncompletePaymentHubRefund.value) return "";
@@ -2852,7 +2852,7 @@ async function handlePaymentHubReturn() {
 	});
 	returnRefundStatus.value = status;
 
-	if (status?.all_complete) {
+	if (status?.all_complete || status?.can_submit_return) {
 		return await submitPaymentHubReturnDraft();
 	}
 
@@ -2891,7 +2891,7 @@ async function handleCheckRefund() {
 			return_invoice: returnDraftDoc.value.name,
 		});
 		returnRefundStatus.value = status;
-		if (status?.all_complete) {
+		if (status?.all_complete || status?.can_submit_return) {
 			await submitPaymentHubReturnDraft();
 		} else if (status?.needs_review) {
 			if (status?.rows?.some((row) => row?.can_retry || row?.status === "Failed")) {
@@ -2920,7 +2920,7 @@ async function retryExistingPaymentHubRefund() {
 		return_invoice: returnDraftDoc.value.name,
 	});
 	returnRefundStatus.value = status;
-	if (status?.all_complete) {
+	if (status?.all_complete || status?.can_submit_return) {
 		await submitPaymentHubReturnDraft();
 	} else if (status?.rows?.some((row) => row?.can_retry || row?.status === "Failed")) {
 		showWarning(__("Refund failed with the provider. Retry Refund is available after correcting the error."));
@@ -2948,7 +2948,7 @@ async function handleCreateReturn() {
 
 	try {
 		if (!isExchangeCreditMode.value && hasExistingPaymentHubRefund.value) {
-			if (returnRefundStatus.value?.all_complete) {
+			if (returnRefundStatus.value?.all_complete || returnRefundStatus.value?.can_submit_return) {
 				await submitPaymentHubReturnDraft();
 			} else {
 				await retryExistingPaymentHubRefund();
