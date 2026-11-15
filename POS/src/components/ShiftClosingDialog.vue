@@ -256,7 +256,7 @@
 								<p class="text-xs md:text-sm text-yellow-700 mt-1 md:mt-2">
 									{{
 										__(
-											"No invoices were created. Closing amounts should match opening amounts."
+											"No invoices were created. Expected cash includes the opening balance and any added float."
 										)
 									}}
 								</p>
@@ -264,7 +264,17 @@
 						</div>
 					</div>
 
-					<!-- Payment Method Summary -->
+					<section v-if="shouldShowSummary" class="float-cash-summary">
+  <h3>{{ __("Cash Drawer Balance") }}</h3>
+  <div class="float-balance-grid">
+    <div><span>{{ __("Opening Cash") }}</span><strong>{{ formatCurrency(cashBalanceSummary.opening) }}</strong><small>{{ __("At shift start") }}</small></div>
+    <div><span>{{ __("Added Float") }}</span><strong>{{ formatCurrency(cashBalanceSummary.float) }}</strong><small>{{ __("Added during this shift") }}</small></div>
+    <div><span>{{ __("Net Cash Sales") }}</span><strong>{{ formatCurrency(cashBalanceSummary.sales) }}</strong><small>{{ __("After cash refunds / change") }}</small></div>
+    <div><span>{{ __("Expected Cash") }}</span><strong>{{ formatCurrency(cashBalanceSummary.expected) }}</strong><small>{{ __("Opening + float + net cash sales") }}</small></div>
+  </div>
+</section>
+
+<!-- Payment Method Summary -->
 					<div
 					        v-if="shouldShowSummary"
 					        class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
@@ -311,6 +321,8 @@
 					                                                        {{ formatCurrency(payment.opening_amount) }}
 					                                                </strong>
 					                                        </div>
+<div class="flex justify-between gap-3"><span class="text-gray-500">{{ __("Added Float") }}</span><strong class="text-gray-900">{{ formatCurrency(payment.float_added || 0) }}</strong></div>
+
 
 					                                        <div class="flex justify-between gap-3">
 					                                                <span class="text-gray-500">
@@ -771,7 +783,7 @@
 												type="number"
 												step="10"
 												min="0"
-												placeholder="0.00"
+												:placeholder="currencyPlaceholder"
 												:disabled="submitResource.loading"
 												:aria-label="
 													__('Enter actual amount for {0}', [
@@ -877,7 +889,7 @@
 									</div>
 
 									<!-- Amount Entry Grid -->
-									<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
+									<div class="float-reconciliation-grid">
 										<!-- Opening Amount -->
 										<div
 											class="text-start bg-white rounded-lg p-2 md:p-3 border border-gray-200"
@@ -898,7 +910,13 @@
 											</div>
 										</div>
 
-										<!-- Expected Amount -->
+										<div v-if="isCashPaymentMethod(payment.mode_of_payment)" class="float-reconciliation-box">
+  <label>{{ __("Added Float") }}</label><strong>{{ formatCurrency(payment.float_added || 0) }}</strong><small>{{ __("During shift") }}</small>
+</div>
+<div v-if="isCashPaymentMethod(payment.mode_of_payment)" class="float-reconciliation-box">
+  <label>{{ __("Net Cash Sales") }}</label><strong>{{ formatCurrency(getSalesForPayment(payment)) }}</strong><small>{{ __("After cash refunds / change") }}</small>
+</div>
+<!-- Expected Amount -->
 										<div
 											class="text-start bg-white rounded-lg p-2 md:p-3 border border-gray-200"
 										>
@@ -914,12 +932,8 @@
 											<div
 												class="text-xs text-gray-500 mt-0.5 md:mt-1 hidden sm:block"
 											>
-												<span v-if="getSalesForPayment(payment) > 0">
-													+{{
-														formatCurrency(getSalesForPayment(payment))
-													}}
-												</span>
-												<span v-else>{{ __("No sales") }}</span>
+												<span v-if="isCashPaymentMethod(payment.mode_of_payment)">{{ __("Opening + float + net sales") }}</span>
+<span v-else>{{ __("Opening + collected") }}</span>
 											</div>
 										</div>
 
@@ -938,9 +952,9 @@
 													(value) => updateClosingAmount(payment, value)
 												"
 												type="number"
-												step="0.01"
+												:step="currencyStep"
 												min="0"
-												placeholder="0.00"
+												:placeholder="currencyPlaceholder"
 												:disabled="
 													showSuccessReport || submitResource.loading
 												"
@@ -1264,6 +1278,7 @@
 </template>
 
 <script setup>
+import { requireSyncedFloats } from "@/utils/offline/floatQueue";
 import { Button, Dialog, FeatherIcon, Input } from "frappe-ui";
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import html2canvas from "html2canvas";
@@ -1296,7 +1311,13 @@ const open = computed({
 });
 
 const { getClosingShiftData, submitClosingShift } = useShift();
-const { formatCurrency, formatQuantity, formatDateTime, formatTime } = useFormatters();
+const { formatCurrency: formatLegacyCurrency, formatQuantity, formatDateTime, formatTime } = useFormatters();
+function formatCurrency(amount) {
+    if ((closingData.value?.cash_currency || shiftStore.profileCurrency) === "KWD") return Number(amount || 0).toFixed(3);
+    return formatLegacyCurrency(amount);
+}
+const currencyStep = computed(() => (closingData.value?.cash_currency || shiftStore.profileCurrency) === "KWD" ? "0.001" : "0.01");
+const currencyPlaceholder = computed(() => (closingData.value?.cash_currency || shiftStore.profileCurrency) === "KWD" ? "0.000" : "0.00");
 const { showSuccess, showWarning } = useToast();
 const posSettingsStore = usePOSSettingsStore();
 const { hideExpectedAmount } = storeToRefs(posSettingsStore);
@@ -1353,6 +1374,7 @@ onBeforeUnmount(() => {
 
 async function loadClosingData() {
 	try {
+		await requireSyncedFloats(props.openingShift);
 		errorMessage.value = ""; // Clear any previous errors
 
 		const data = await closingDataResource.submit({
@@ -1384,7 +1406,7 @@ async function loadClosingData() {
 		}
 	} catch (error) {
 		console.error("Error loading closing data:", error);
-		errorMessage.value =
+		errorMessage.value = error?.messages?.[0] || error?.message ||
 			"Unable to load shift data. Please check your connection and try again.";
 	}
 }
@@ -1591,6 +1613,7 @@ async function submitClosing() {
 	if (!closingData.value) return;
 
 	try {
+		await requireSyncedFloats(props.openingShift);
 		errorMessage.value = ""; // Clear any previous errors
 
 		// Ensure all differences are calculated
@@ -1802,8 +1825,13 @@ const getTotalDifference = computed(() => {
 });
 
 function isCashPaymentMethod(modeOfPayment) {
-        return String(modeOfPayment || "").trim().toLowerCase() === "cash";
+    const configured = closingData.value?.cash_modes;
+    return Array.isArray(configured) ? configured.includes(modeOfPayment) : String(modeOfPayment || "").trim().toLowerCase() === "cash";
 }
+const cashBalanceSummary = computed(() => {
+    const rows = (closingData.value?.payment_reconciliation || []).filter(row => isCashPaymentMethod(row.mode_of_payment));
+    return rows.reduce((total, row) => ({opening: total.opening + Number(row.opening_amount || 0), float: total.float + Number(row.float_added || 0), sales: total.sales + getSalesForPayment(row), expected: total.expected + Number(row.expected_amount || 0)}), {opening: 0, float: 0, sales: 0, expected: 0});
+});
 
 function isUsagePaymentMethod(modeOfPayment) {
         const mode = String(modeOfPayment || "").trim().toLowerCase();
@@ -1817,7 +1845,8 @@ function isUsagePaymentMethod(modeOfPayment) {
 function getSalesForPayment(payment) {
 	return (
 		Number.parseFloat(payment.expected_amount || 0) -
-		Number.parseFloat(payment.opening_amount || 0)
+		Number.parseFloat(payment.opening_amount || 0) -
+		Number.parseFloat(payment.float_added || 0)
 	);
 }
 
@@ -1870,3 +1899,15 @@ function getPaymentIcon(method) {
 	}
 }
 </script>
+
+<style scoped>
+.float-cash-summary { border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; background: #fff; }
+.float-cash-summary h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; color: #111827; }
+.float-balance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.float-balance-grid > div, .float-reconciliation-box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fff; text-align: start; }
+.float-balance-grid span, .float-reconciliation-box label { display: block; font-size: 12px; color: #6b7280; }
+.float-balance-grid strong, .float-reconciliation-box strong { display: block; margin-top: 4px; font-size: 18px; font-weight: 600; color: #111827; }
+.float-balance-grid small, .float-reconciliation-box small { display: block; margin-top: 4px; font-size: 11px; color: #6b7280; }
+.float-reconciliation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .float-balance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>

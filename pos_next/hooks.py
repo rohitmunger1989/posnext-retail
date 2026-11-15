@@ -101,8 +101,8 @@ fixtures = [
 # ------------
 
 # before_install = "pos_next.install.before_install"
-after_install = "pos_next.install.after_install"
-after_migrate = "pos_next.install.after_migrate"
+after_install = ["pos_next.install.after_install", "pos_next.setup_float_history.ensure_float_history_workspace"]
+after_migrate = ["pos_next.install.after_migrate", "pos_next.setup_float_history.ensure_float_history_workspace"]
 
 # Uninstallation
 # ------------

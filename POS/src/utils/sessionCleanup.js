@@ -1,3 +1,4 @@
+import { clearFloatApprovals } from "@/utils/offline/floatQueue";
 import { clearAllDrafts } from "@/utils/draftManager";
 import { clearAllOfflineReceiptPayloads } from "@/utils/offline/offlineReceiptCache";
 import { usePOSCartStore } from "@/stores/posCart";
@@ -32,6 +33,7 @@ const USER_KEYS = [
  */
 export async function cleanupUserSession() {
 	invalidateOfflineAuthorizationRequests();
+	try { await clearFloatApprovals(); } catch (error) { console.warn("Could not clear offline float approvals:", error); }
 	// 1. Clear all user-specific localStorage keys
 	for (const key of USER_KEYS) {
 		localStorage.removeItem(key);

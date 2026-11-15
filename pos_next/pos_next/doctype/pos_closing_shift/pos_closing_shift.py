@@ -63,6 +63,17 @@ class POSClosingShift(Document):
 				_("Selected POS Opening Shift should be open."),
 				title=_("Invalid Opening Entry"),
 			)
+		from pos_next.api.float_additions import lock_shift
+		lock_shift(self.pos_opening_shift, require_open=True)
+		# Rebuild expected amounts from server records; never trust browser totals.
+		opening = frappe.get_doc("POS Opening Shift", self.pos_opening_shift)
+		if (self.company, self.pos_profile, self.user) != (opening.company, opening.pos_profile, opening.user):
+			frappe.throw("Closing shift does not match its opening shift.")
+		fresh = make_closing_shift_from_opening(json.dumps(opening.as_dict(), default=str))
+		counted = {row.mode_of_payment: row.closing_amount for row in self.payment_reconciliation}
+		self.set("payment_reconciliation", fresh["payment_reconciliation"])
+		for row in self.payment_reconciliation:
+			row.closing_amount = counted.get(row.mode_of_payment, 0)
 		self.update_payment_reconciliation()
 
 	def update_payment_reconciliation(self):
@@ -267,6 +278,8 @@ class POSClosingShift(Document):
 
 		mode_summaries = []
 		payment_breakdown_copy = payment_breakdown.copy()
+		from pos_next.api.float_additions import float_totals
+		added_float = float_totals(self.pos_opening_shift)
 		for detail in self.get("payment_reconciliation", []):
 			mop = detail.mode_of_payment
 			breakdown = payment_breakdown_copy.pop(mop, None)
@@ -278,7 +291,7 @@ class POSClosingShift(Document):
 					if amount
 				]
 
-			base_total = flt(detail.expected_amount) - flt(detail.opening_amount)
+			base_total = flt(detail.expected_amount) - flt(detail.opening_amount) - added_float.get(mop, 0)
 
 			mode_summaries.append(
 				frappe._dict(
@@ -634,6 +647,11 @@ def make_closing_shift_from_opening(opening_shift):
 			)
 		)
 
+	from pos_next.api.float_additions import float_totals
+	added_float = float_totals(opening_shift.get("name"))
+	for mode, amount in added_float.items():
+		_aggregate_payment(payments, mode, amount)
+
 	# Process invoices. Derive Customer Credit redemption from submitted accounting
 	# entries so shifts created before the new tracking-field fix also classify
 	# correctly.
@@ -660,6 +678,9 @@ def make_closing_shift_from_opening(opening_shift):
 		)
 		amount = get_base_value(py, "paid_amount", "base_paid_amount")
 		_aggregate_payment(payments, py.mode_of_payment, amount)
+
+	for row in payments:
+		row.float_added = added_float.get(row.mode_of_payment, 0)
 
 	# Update closing shift with totals
 	closing_shift.grand_total = summary["grand_total"]
@@ -704,6 +725,8 @@ def make_closing_shift_from_opening(opening_shift):
 
 	# Build response with display-only fields
 	result = closing_shift.as_dict()
+	result["cash_currency"] = company_currency
+	result["cash_modes"] = [row.mode_of_payment for row in payments if frappe.db.get_value("Mode of Payment", row.mode_of_payment, "type") == "Cash"]
 	result.update(
 		{
 			"returns_total": summary["returns_total"],

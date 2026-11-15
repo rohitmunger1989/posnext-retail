@@ -1,0 +1,134 @@
+{
+ "doctype": "DocType",
+ "name": "POS Float Addition",
+ "module": "POS Next",
+ "autoname": "format:FLOAT-{YYYY}-{#####}",
+ "engine": "InnoDB",
+ "track_changes": 1,
+ "allow_rename": 0,
+ "field_order": [
+  "pos_opening_shift",
+  "pos_profile",
+  "company",
+  "currency",
+  "mode_of_payment",
+  "amount",
+  "reason",
+  "cashier",
+  "authorized_by",
+  "event_key",
+  "occurred_at",
+  "offline",
+  "terminal_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "pos_opening_shift",
+   "fieldtype": "Link",
+   "label": "Shift",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "POS Opening Shift"
+  },
+  {
+   "fieldname": "pos_profile",
+   "fieldtype": "Link",
+   "label": "POS Profile",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "POS Profile"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "Company"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "Currency"
+  },
+  {
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Link",
+   "label": "Cash Mode",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "Mode of Payment"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "currency",
+   "precision": "3"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "cashier",
+   "fieldtype": "Link",
+   "label": "Cashier",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "authorized_by",
+   "fieldtype": "Link",
+   "label": "Authorized By",
+   "reqd": 1,
+   "read_only": 1,
+   "options": "User"
+  },
+  {
+   "fieldname": "event_key",
+   "fieldtype": "Data",
+   "label": "Request ID",
+   "reqd": 1,
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "occurred_at",
+   "label": "Occurred At",
+   "fieldtype": "Datetime",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "offline",
+   "label": "Recorded Offline",
+   "fieldtype": "Check",
+   "read_only": 1
+  },
+  {
+   "fieldname": "terminal_id",
+   "label": "Terminal ID",
+   "fieldtype": "Data",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  }
+ ]
+}

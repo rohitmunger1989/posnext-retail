@@ -20,6 +20,12 @@ class POSOpeningShift(Document):
 		if not cint(frappe.db.get_value("User", self.user, "enabled")):
 			frappe.throw(_(f"User {self.user} has been disabled. Please select valid user/cashier"))
 
+	def before_cancel(self):
+		from pos_next.api.float_additions import lock_shift
+		lock_shift(self.name, check_owner=False)
+		if frappe.db.exists("POS Float Addition", {"pos_opening_shift": self.name}):
+			frappe.throw("A shift with float history must be closed, not cancelled.")
+
 	def on_submit(self):
 		self.set_status(update=True)
 

@@ -969,6 +969,10 @@
 							__("Open Drawer")
 						}}</span>
 					</button>
+<button type="button" class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 transition-colors shadow-sm hover:shadow touch-manipulation group" @click="showFloatDialog = true" :title="__('Add cash to this shift')">
+  <div class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-emerald-100 transition-colors"><svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18v12H3zM3 10h18m-9 2v4m-2-2h4" /></svg></div>
+  <span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{ __("Add Float") }}</span>
+</button>
 				</div>
 
 				<Dialog v-model="showCashDrawerDialog" :options="{ title: __('Open Cash Drawer'), size: 'md' }">
@@ -1766,9 +1770,14 @@
 			@update-item="handleUpdateItem"
 		/>
 	</div>
+<FloatAdditionDialog v-model="showFloatDialog" :shift="shiftStore.currentShift?.name" :profile="shiftStore.profileName" :open-drawer="openFloatDrawer" />
 </template>
 
 <script setup>
+import { queueOfflineDrawer, claimOfflineDrawer, finishOfflineDrawer } from "@/utils/offline/floatQueue";
+import { encryptManagerPin } from "@/utils/securePin";
+import FloatAdditionDialog from "@/components/sale/FloatAdditionDialog.vue";
+
 /**
  * ============================================================================
  * IMPORTS
@@ -2142,8 +2151,10 @@ const cashDrawerEnabled = computed(() =>
 const allowManualCashDrawer = computed(() =>
 	drawerSettingEnabled(settingsStore.settings?.allow_manual_cash_drawer, true)
 );
+const offlineDrawerMode = ref(false);
+const offlineDrawerEventKey = ref("");
 const requireManagerPinCashDrawer = computed(() =>
-	drawerSettingEnabled(settingsStore.settings?.require_manager_pin_cash_drawer, true)
+	offlineDrawerMode.value || drawerSettingEnabled(settingsStore.settings?.require_manager_pin_cash_drawer, true)
 );
 
 const cashDrawerModeLabel = computed(() => {
@@ -2305,6 +2316,9 @@ function focusCashDrawerSetupPin() {
 }
 
 function openCashDrawerDialog(reason = "Change Required") {
+    offlineDrawerMode.value = isOffline();
+    offlineDrawerEventKey.value = crypto.randomUUID();
+    if (typeof reason !== "string") reason = "Change Required";
 	loadCashDrawerTerminalSettings();
 	cashDrawerManagerPin.value = "";
 	cashDrawerReason.value = reason || "Change Required";
@@ -2333,10 +2347,9 @@ async function unlockCashDrawerSetup() {
         }
         cashDrawerSetupSubmitting.value = true;
         try {
-                const response = await call("pos_next.api.cash_drawer.verify_cash_drawer_manager_pin", {
-                        manager_pin: cashDrawerSetupPin.value,
-                        pos_profile: props.posProfile,
-                });
+                const context = {pos_profile: props.posProfile, pos_opening_shift: shiftStore.currentShift?.name || ""};
+                const pin_approval = await encryptManagerPin("drawer_setup", context, cashDrawerSetupPin.value);
+                const response = await call("pos_next.api.cash_drawer.verify_cash_drawer_manager_pin", {...context, pin_approval});
                 const result = response?.message || response;
                 if (!result?.authorized) throw new Error(__("Manager authorization failed."));
                 cashDrawerSetupUnlocked.value = true;
@@ -2637,8 +2650,35 @@ function cashDrawerMethodLabel() {
 	return "";
 }
 
+function isDrawerTransportFailure(error) {
+    return error instanceof TypeError && !error.response && !error.httpStatus &&
+        /Failed to fetch|NetworkError|Network request failed|Load failed/i.test(String(error.message || ""));
+}
+async function performOfflineCashDrawer(posOpeningShift, reason) {
+    offlineDrawerMode.value = true;
+    const entry = await queueOfflineDrawer({pos_opening_shift: posOpeningShift,
+        event_key: offlineDrawerEventKey.value || (offlineDrawerEventKey.value = crypto.randomUUID()), reason},
+        props.posProfile, cashDrawerManagerPin.value || "");
+    cashDrawerManagerPin.value = "";
+    if (!await claimOfflineDrawer(entry.event_key)) throw new Error("This drawer request was already issued. Close and reopen the dialog for a new authorized request.");
+    let hardware;
+    try {
+        hardware = await openCashDrawerHardware({mode: cashDrawerMode.value,
+            printerName: effectiveCashDrawerPrinterName.value, commandProfile: cashDrawerCommandProfile.value,
+            terminalId: cashDrawerTerminalId.value});
+        if (hardware?.success === false) throw new Error(hardware.error || "Drawer hardware did not confirm opening.");
+    } catch (hardwareError) {
+        await finishOfflineDrawer(entry.event_key, "Failed", hardwareError?.message || "Drawer hardware failed.", effectiveCashDrawerPrinterName.value || "");
+        throw new Error("Manager PIN verified offline, but the terminal drawer connection failed: " + (hardwareError?.message || "Check the Local Agent/printer."));
+    }
+    await finishOfflineDrawer(entry.event_key, "Opened", "", hardware?.printerName || effectiveCashDrawerPrinterName.value || "");
+    showSuccess(__("Cash drawer opened offline. Audit will sync when connected."));
+    showCashDrawerDialog.value = false;
+}
+
 async function authorizeCashDrawer() {
 	if (cashDrawerSubmitting.value) return;
+	offlineDrawerMode.value = isOffline();
 
 	if (cashDrawerMode.value === "disabled") {
 		showWarning(__("Select a Cash Drawer Mode first."));
@@ -2672,14 +2712,23 @@ async function authorizeCashDrawer() {
 	saveCashDrawerTerminalSettings(false);
 	cashDrawerSubmitting.value = true;
 	try {
-		const response = await call("pos_next.api.cash_drawer.authorize_manual_open", {
-			pos_profile: props.posProfile,
-			pos_opening_shift: posOpeningShift,
-			manager_pin: cashDrawerManagerPin.value || "",
-			reason,
-			terminal_id: cashDrawerTerminalId.value,
-			method: cashDrawerMethodLabel(),
-		});
+        if (isOffline()) {
+            await performOfflineCashDrawer(posOpeningShift, reason);
+            return;
+        }
+        const context = {pos_profile: props.posProfile, pos_opening_shift: posOpeningShift,
+            reason, terminal_id: cashDrawerTerminalId.value, method: cashDrawerMethodLabel(),
+            request_id: offlineDrawerEventKey.value || (offlineDrawerEventKey.value = crypto.randomUUID())};
+        let response;
+        try {
+            const pin_approval = requireManagerPinCashDrawer.value
+                ? await encryptManagerPin("manual_drawer", context, cashDrawerManagerPin.value || "") : null;
+            response = await call("pos_next.api.cash_drawer.authorize_manual_open", {...context, pin_approval});
+        } catch (error) {
+            if (!isDrawerTransportFailure(error)) throw error;
+            await performOfflineCashDrawer(posOpeningShift, reason);
+            return;
+        }
 		const result = response?.message || response;
 		if (!result?.authorized || !result?.log_name) {
 			throw new Error(__("Cash drawer authorization was not approved."));
@@ -2735,7 +2784,43 @@ async function authorizeCashDrawer() {
 	}
 }
 
+async function openFloatDrawer(floatName, offline = false) {
+    if (offline) {
+        const result = await openCashDrawerHardware({mode: cashDrawerMode.value,
+            printerName: effectiveCashDrawerPrinterName.value, commandProfile: cashDrawerCommandProfile.value,
+            terminalId: cashDrawerTerminalId.value});
+        if (result?.success === false) throw new Error(result.error || "Drawer hardware failed.");
+        return result;
+    }
+    if (cashDrawerMode.value === "disabled" || !cashDrawerTerminalId.value) {
+        throw new Error("Configure this terminal cash drawer first.");
+    }
+    const raw = await call("pos_next.api.float_additions.authorize_float_drawer", {
+        float_name: floatName, terminal_id: cashDrawerTerminalId.value, method: cashDrawerMethodLabel(),
+    });
+    const result = raw?.message || raw;
+    if (!result?.authorized) {
+        if (result?.status === "Opened") return;
+        throw new Error("Drawer request was already issued or needs manual review. Use Open Drawer.");
+    }
+    let hardware;
+    try {
+        hardware = await openCashDrawerHardware({mode: cashDrawerMode.value,
+            printerName: effectiveCashDrawerPrinterName.value, commandProfile: cashDrawerCommandProfile.value,
+            terminalId: cashDrawerTerminalId.value});
+        if (hardware?.success === false) throw new Error(hardware.error || "Drawer hardware failed.");
+    } catch (exc) {
+        try { await call("pos_next.api.cash_drawer.report_open_result", {log_name: result.log_name,
+            success: 0, error_message: exc?.message || "Drawer hardware failed."}); } catch (_) { /* Preserve original failure. */ }
+        throw exc;
+    }
+    try { await call("pos_next.api.cash_drawer.report_open_result", {log_name: result.log_name,
+        success: 1, printer_name: hardware?.printerName || effectiveCashDrawerPrinterName.value || ""});
+    } catch (_) { throw new Error("Drawer opened, but its audit confirmation could not be saved. Inform a manager."); }
+}
+
 defineExpose({
+	openFloatDrawer,
 	openCashDrawerDialog,
 	openCashDrawerSetupDialog,
 });
@@ -3387,5 +3472,7 @@ onBeforeUnmount(() => {
 	if (typeof document === "undefined") return;
 	document.removeEventListener("mousedown", handleOutsideClick);
 });
+
+const showFloatDialog = ref(false);
 </script>
 ```

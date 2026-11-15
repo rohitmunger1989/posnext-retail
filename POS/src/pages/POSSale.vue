@@ -214,7 +214,8 @@
 						</svg>
 						<span>{{ __("Lock Screen") }}</span>
 					</button>
-                                        <button
+                                        <button type="button" class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 flex items-center gap-3 transition-colors" @click="showFloatDialog = true"><svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18v12H3zM3 10h18m-9 2v4m-2-2h4" /></svg><span>{{ __("Add Float") }}</span></button>
+<button
                                                 v-if="
                                                         shiftStore.hasOpenShift &&
                                                         cartStore.itemCount === 0 &&
@@ -1073,6 +1074,7 @@
 		<!-- Session Lock Screen (outside v-if/v-else so it renders even during loading) -->
 		<SessionLockScreen />
 	</div>
+<FloatAdditionDialog v-model="showFloatDialog" :shift="shiftStore.currentShift?.name" :profile="shiftStore.profileName" :open-drawer="openFloatDrawer" />
 </template>
 
 <script>
@@ -1083,9 +1085,14 @@
 let _initializedKey = null;
 // biome-ignore lint/style/useConst: Reassigned from script setup lifecycle handlers.
 let _posInitPromise = null;
+
+
 </script>
 
 <script setup>
+import { syncFloatQueue, syncOfflineDrawers, ensureOfflineFloatDefaults } from "@/utils/offline/floatQueue";
+import FloatAdditionDialog from "@/components/sale/FloatAdditionDialog.vue";
+
 import { offlineState } from "@/utils/offline/offlineState";
 import {
     syncPendingOfflineCustomers,
@@ -4648,4 +4655,21 @@ watch(
 	}
 );
 
+const showFloatDialog = ref(false);
+let floatSyncTimer;
+const syncPendingFloat = async () => {
+    if (offlineState.isOffline) return;
+    try {
+        await syncFloatQueue();
+        await syncOfflineDrawers();
+        await ensureOfflineFloatDefaults(shiftStore.currentShift?.name, shiftStore.profileName);
+    } catch (error) { log.warn("Float sync or offline manager cache needs connection:", error); }
+};
+watch(() => [shiftStore.currentShift?.name, shiftStore.profileName], syncPendingFloat);
+onMounted(() => { window.addEventListener("online", syncPendingFloat); floatSyncTimer = setInterval(syncPendingFloat, 30000); syncPendingFloat(); });
+onUnmounted(() => { window.removeEventListener("online", syncPendingFloat); clearInterval(floatSyncTimer); });
+async function openFloatDrawer(name, offline = false) {
+    if (!invoiceCart.value?.openFloatDrawer) throw new Error("Drawer controls are unavailable.");
+    return invoiceCart.value.openFloatDrawer(name, offline);
+}
 </script>

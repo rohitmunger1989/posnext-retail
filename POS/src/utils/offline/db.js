@@ -35,6 +35,8 @@ export const db = new Dexie("pos_next_offline");
  * @constant {Object}
  */
 const CURRENT_SCHEMA = {
+    drawer_queue: "&event_key, shift, user, status",
+    float_queue: "&event_key, shift, user, status",
 	// Key-value store for settings and metadata
 	settings: "&key",
 

@@ -75,7 +75,7 @@ def _validate_shift(pos_opening_shift: str | None, pos_profile: str) -> dict:
     return shift
 
 
-def _verify_drawer_manager_pin(pin: str | None) -> dict:
+def _verify_drawer_manager_pin(pin: str | None, *, permission="can_open_cash_drawer") -> dict:
     pin = (pin or "").strip()
     if not pin:
         frappe.throw(_("Manager POS PIN is required."))
@@ -84,7 +84,7 @@ def _verify_drawer_manager_pin(pin: str | None) -> dict:
 
     rows = frappe.get_all(
         "POS User PIN",
-        filters={"enabled": 1, "can_open_cash_drawer": 1},
+        filters={"enabled": 1, permission: 1},
         fields=["name", "user"],
         order_by="modified desc",
     )
@@ -121,7 +121,7 @@ def _verify_drawer_manager_pin(pin: str | None) -> dict:
 
 def _normalize_method(method: str | None) -> str:
     method = (method or "").strip()
-    if method not in ("QZ Tray", "POSNext Local Agent"):
+    if method not in ("QZ Tray", "POSNext Local Agent", "POSNext Mobile Agent"):
         return ""
     return method
 
@@ -188,19 +188,16 @@ def get_cash_drawer_settings(pos_profile: str):
 
 @frappe.whitelist()
 @rate_limit(limit=10, seconds=60)
-def verify_cash_drawer_manager_pin(
-    manager_pin: str | None = None,
-    pos_profile: str | None = None,
-):
-    """Authorize access to terminal-local cash drawer setup without opening it."""
-    if pos_profile and not frappe.db.exists("POS Profile", pos_profile):
-        frappe.throw(_("POS Profile {0} was not found.").format(pos_profile))
-
-    approval = _verify_drawer_manager_pin(manager_pin)
-    return {
-        "authorized": True,
-        "authorized_by": approval.get("approver"),
-    }
+def verify_cash_drawer_manager_pin(pos_profile=None, pos_opening_shift=None, pin_approval=None):
+    """Authorize setup using an encrypted, session-bound manager approval."""
+    from pos_next.api.pin_approval import authorize_pin_approval
+    if pos_opening_shift:
+        _validate_shift(pos_opening_shift, pos_profile)
+    elif not pos_profile or not frappe.db.exists("POS Profile", pos_profile):
+        frappe.throw(_("POS Profile was not found."))
+    approval = authorize_pin_approval("drawer_setup", {"pos_profile": pos_profile,
+        "pos_opening_shift": pos_opening_shift}, pin_approval)
+    return {"authorized": True, "authorized_by": approval["approver"]}
 
 
 @frappe.whitelist()
@@ -301,7 +298,8 @@ def authorize_automatic_open(
 def authorize_manual_open(
     pos_profile: str,
     pos_opening_shift: str,
-    manager_pin: str | None = None,
+    pin_approval: str | None = None,
+    request_id: str | None = None,
     reason: str | None = None,
     terminal_id: str | None = None,
     method: str | None = None,
@@ -324,11 +322,26 @@ def authorize_manual_open(
 
     authorized_by = frappe.session.user
     if settings["require_manager_pin_cash_drawer"]:
-        authorized_by = _verify_drawer_manager_pin(manager_pin).get("approver")
+        from pos_next.api.pin_approval import authorize_pin_approval
+        authorized_by = authorize_pin_approval("manual_drawer", {"pos_profile": pos_profile,
+            "pos_opening_shift": pos_opening_shift, "reason": reason, "terminal_id": terminal_id,
+            "method": method, "request_id": request_id}, pin_approval)["approver"]
 
+    try:
+        event_key = "MANUAL:" + (uuid.UUID(str(request_id)).hex if request_id else uuid.uuid4().hex)
+    except (ValueError, TypeError, AttributeError):
+        frappe.throw(_("Invalid drawer request ID."))
+    existing = frappe.db.get_value("POS Cash Drawer Log", {"event_key": event_key},
+        ["name", "status", "cashier", "pos_opening_shift", "pos_profile", "reason", "terminal_id", "method"], as_dict=True)
+    if existing:
+        if (existing.cashier != frappe.session.user or existing.pos_opening_shift != pos_opening_shift
+            or existing.pos_profile != pos_profile or existing.reason != reason
+            or existing.terminal_id != str(terminal_id or "").strip() or existing.method != _normalize_method(method)):
+            frappe.throw(_("Drawer request ID was already used for different details."))
+        return {"authorized": False, "reason": "already_authorized", "log_name": existing.name, "status": existing.status}
     profile = frappe.get_cached_doc("POS Profile", pos_profile)
     log = _create_log(
-        event_key=f"MANUAL:{uuid.uuid4().hex}",
+        event_key=event_key,
         action="Manual",
         company=profile.company,
         warehouse=profile.warehouse,
@@ -389,3 +402,62 @@ def report_open_result(
         "log_name": doc.name,
         "status": doc.status,
     }
+
+
+@frappe.whitelist()
+def sync_offline_open(grant, packet, signature, drawer_status=None, error_message=None, printer_name=None):
+    """Import a signed offline manual drawer audit. Never opens hardware or adds cash."""
+    import json
+    import time
+    from datetime import datetime, timezone
+    from frappe.utils import convert_utc_to_system_timezone, get_datetime
+    from pos_next.api.float_additions import _verify_offline_packet, lock_shift
+
+    grant = json.loads(grant) if isinstance(grant, str) else grant
+    claims, data = _verify_offline_packet(grant, packet, signature, action="drawer")
+    shift = lock_shift(data["pos_opening_shift"])
+    if shift.docstatus != 1 or shift.pos_profile != claims["pos_profile"]:
+        frappe.throw("The offline drawer event does not match its POS shift.")
+    reason = str(data["reason"] or "").strip()
+    try:
+        event_id = str(uuid.UUID(str(data["event_key"])))
+    except (ValueError, TypeError, AttributeError):
+        frappe.throw("Invalid offline drawer event ID.")
+    if not reason or len(reason) > 500 or data["method"] not in ("QZ Tray", "POSNext Local Agent", "POSNext Mobile Agent"):
+        frappe.throw("Invalid offline drawer reason or method.")
+    occurred = datetime.fromtimestamp(data["occurred_at"], timezone.utc)
+    occurred = convert_utc_to_system_timezone(occurred).replace(tzinfo=None)
+    if occurred < get_datetime(shift.period_start_date):
+        frappe.throw("The drawer event predates this shift.")
+    if shift.pos_closing_shift:
+        end = frappe.db.get_value("POS Closing Shift", shift.pos_closing_shift, "period_end_date")
+        if not end or occurred > get_datetime(end):
+            frappe.throw("The drawer event was recorded after the shift closed.")
+    event_key = "OFFLINE-MANUAL:" + event_id
+    name = frappe.db.get_value("POS Cash Drawer Log", {"event_key": event_key}, "name")
+    if not name:
+        # An online authorization response may have been lost before local fallback.
+        # Both paths carry the same client request UUID; complete that audit once.
+        name = frappe.db.get_value("POS Cash Drawer Log", {"event_key": "MANUAL:" + uuid.UUID(event_id).hex}, "name")
+    if name:
+        log = frappe.get_doc("POS Cash Drawer Log", name)
+        if (log.cashier != frappe.session.user or log.pos_opening_shift != shift.name
+            or log.authorized_by != claims["manager"] or log.reason != reason or log.terminal_id != data["terminal_id"]
+            or log.method != data["method"] or log.action != "Manual"):
+            frappe.throw("Offline drawer event conflicts with an existing audit entry.")
+    else:
+        if time.time() >= claims["expires_at"]:
+            frappe.throw("Offline drawer approval expired before sync. Retain this audit for manager review.")
+        log = _create_log(event_key=event_key, action="Manual", company=shift.company,
+            warehouse=frappe.get_cached_value("POS Profile", shift.pos_profile, "warehouse"),
+            pos_profile=shift.pos_profile, pos_opening_shift=shift.name, authorized_by=claims["manager"],
+            reason=reason, terminal_id=data["terminal_id"], method=data["method"])
+    # Late hardware confirmations may complete Pending, but never downgrade Opened.
+    if log.status == "Pending":
+        log.status = "Opened" if drawer_status == "Opened" else "Failed" if drawer_status == "Failed" else "Pending"
+        log.error_message = str(error_message or "Offline manual drawer event; terminal reported the hardware result.")[:500]
+        log.printer_name = str(printer_name or "")[:140]
+        if log.status == "Opened":
+            log.opened_at = occurred
+        log.save(ignore_permissions=True)
+    return {"name": log.name, "already_saved": bool(name), "status": log.status}

@@ -1,0 +1,73 @@
+{
+ "doctype": "Sidebar",
+ "name": "POS Next",
+ "title": "POS Next",
+ "module": "POS Next",
+ "app": "pos_next",
+ "standard": 1,
+ "header_icon": "message",
+ "items": [
+  {
+   "type": "Link",
+   "label": "Home",
+   "link_type": "Workspace",
+   "link_to": "POSNext",
+   "icon": "home"
+  },
+  {
+   "type": "Link",
+   "label": "Item",
+   "link_type": "DocType",
+   "link_to": "Item"
+  },
+  {
+   "type": "Link",
+   "label": "Pos Settings",
+   "link_type": "DocType",
+   "link_to": "POS Settings"
+  },
+  {
+   "type": "Link",
+   "label": "Pos Profile",
+   "link_type": "DocType",
+   "link_to": "POS Profile"
+  },
+  {
+   "type": "Link",
+   "label": "Pos Opening Shift",
+   "link_type": "DocType",
+   "link_to": "POS Opening Shift"
+  },
+  {
+   "type": "Link",
+   "label": "Pos Closing Shift",
+   "link_type": "DocType",
+   "link_to": "POS Closing Shift"
+  },
+  {
+   "type": "Link",
+   "label": "Pos Offer",
+   "link_type": "DocType",
+   "link_to": "POS Offer"
+  },
+  {
+   "type": "Link",
+   "label": "Pos Coupon",
+   "link_type": "DocType",
+   "link_to": "POS Coupon"
+  },
+  {
+   "type": "Link",
+   "label": "Float History",
+   "link_type": "Report",
+   "link_to": "POS Float History",
+   "icon": "history"
+  },
+  {
+   "type": "Link",
+   "label": "POS User PIN",
+   "link_type": "DocType",
+   "link_to": "POS User PIN"
+  }
+ ]
+}

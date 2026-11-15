@@ -9,7 +9,8 @@
   "opening_amount",
   "closing_amount",
   "expected_amount",
-  "difference"
+  "difference",
+  "float_added"
  ],
  "fields": [
   {
@@ -53,6 +54,13 @@
    "label": "Difference",
    "options": "company:company_currency",
    "read_only": 1
+  },
+  {
+   "fieldname": "float_added",
+   "fieldtype": "Currency",
+   "label": "Float Added",
+   "read_only": 1,
+   "precision": "3"
   }
  ],
  "istable": 1,

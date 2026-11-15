@@ -1,3 +1,10 @@
+{% set float_rows = frappe.get_all("POS Float Addition", filters={"pos_opening_shift": data.pos_opening_shift}, fields=["creation", "occurred_at", "offline", "amount", "currency", "reason", "cashier", "authorized_by"], order_by="creation asc", limit_page_length=0) %}
+{% if float_rows %}
+<h5>{{ _("Float Additions") }}</h5>
+<table class="table table-bordered"><thead><tr><th>{{ _("Time") }}</th><th>{{ _("Amount") }}</th><th>{{ _("Reason") }}</th><th>{{ _("Cashier / Approver") }}</th></tr></thead><tbody>
+{% for row in float_rows %}<tr><td>{{ row.occurred_at or row.creation }}</td><td>{{ frappe.utils.fmt_money(row.amount, currency=row.currency) }}</td><td>{{ row.reason | e }}</td><td>{{ row.cashier | e }} / {{ row.authorized_by | e }}</td></tr>{% endfor %}
+</tbody></table>
+{% endif %}
 <div class="clearfix"></div>
 <div class="box">
 		<div class="grid-body">
@@ -65,7 +72,7 @@
                                                                         <tr>
                                                                                 <td class="text-left">{{ d.mode_of_payment }}</td>
                                                                                 <td class='text-right'>
-                                                                                        {% set base_amount = (d.expected_amount or 0) - (d.opening_amount or 0) %}
+                                                                                        {% set base_amount = d.base_amount if d.base_amount is defined else (d.expected_amount or 0) - (d.opening_amount or 0) - (d.float_added or 0) %}
                                                                                         {{ frappe.utils.fmt_money(base_amount, currency=company_currency or currency) }}
                                                                                         {% set breakdown = d.currency_breakdown if d.currency_breakdown is defined else [] %}
                                                                                         {% if breakdown %}

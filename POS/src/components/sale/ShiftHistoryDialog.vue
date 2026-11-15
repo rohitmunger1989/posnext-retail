@@ -156,7 +156,8 @@
 									<!-- FIX #17: actions column — user can open either Opening or Closing shift -->
 									<td class="px-3 py-4 text-right">
 										<div class="flex items-center justify-end gap-1">
-											<button
+											<button class="text-xs px-2 py-1 rounded bg-emerald-50 text-emerald-700" @click.stop="floatHistoryShift = shift.opening_shift_name; showFloatHistory = true">{{ __('Float History') }}</button>
+<button
 												@click.stop="openShiftDoc(shift, 'opening')"
 												class="text-[10px] font-semibold px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
 												:title="__('View Opening Shift')"
@@ -234,9 +235,13 @@
 			</Button>
 		</template>
 	</Dialog>
+<FloatAdditionDialog v-model="showFloatHistory" :shift="floatHistoryShift" :profile="posProfile" read-only />
 </template>
 
 <script setup>
+import FloatAdditionDialog from "@/components/sale/FloatAdditionDialog.vue";
+const floatHistoryShift = ref('');
+const showFloatHistory = ref(false);
 import { useToast } from "@/composables/useToast"
 import { DEFAULT_CURRENCY, DEFAULT_LOCALE, formatCurrency as formatCurrencyUtil } from "@/utils/currency"
 import { Button, Dialog, Input, createResource } from "frappe-ui"
