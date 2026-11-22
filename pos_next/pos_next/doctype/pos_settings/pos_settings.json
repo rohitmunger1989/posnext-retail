@@ -104,6 +104,7 @@
   "customer_display_idle_mode",
   "customer_display_idle_image",
   "customer_display_idle_video",
+  "customer_display_videos",
   "section_break_customer_display_overlay",
   "customer_display_overlay_enabled",
   "customer_display_overlay_text",
@@ -844,7 +845,15 @@
    "depends_on": "eval:doc.customer_display_enabled && doc.customer_display_idle_mode == 'Video'",
    "fieldname": "customer_display_idle_video",
    "fieldtype": "Attach",
-   "label": "Idle Promotional Video"
+   "label": "Single Video (Fallback)"
+  },
+  {
+   "fieldname": "customer_display_videos",
+   "label": "Advertising Video Playlist",
+   "fieldtype": "Table",
+   "options": "POS Customer Display Video",
+   "depends_on": "eval:doc.customer_display_enabled && doc.customer_display_idle_mode == 'Video'",
+   "description": "Videos play in row order and repeat. Enabled rows override the single-video fallback. Upload limit: 500 MB per video after server configuration. 4:3 and 16:9 screens fit without cropping."
   },
   {
    "default": "5",

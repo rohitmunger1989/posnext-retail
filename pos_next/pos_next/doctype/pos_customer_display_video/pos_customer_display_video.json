@@ -1,0 +1,10 @@
+{
+ "doctype":"DocType", "name":"POS Customer Display Video", "module":"POS Next", "istable":1,
+ "editable_grid":1, "engine":"InnoDB", "field_order":["enabled","title","video"],
+ "fields":[
+  {"fieldname":"enabled","label":"Enabled","fieldtype":"Check","default":"1","in_list_view":1,"columns":1},
+  {"fieldname":"title","label":"Title","fieldtype":"Data","in_list_view":1,"columns":3},
+  {"fieldname":"video","label":"Video","fieldtype":"Attach","reqd":1,"in_list_view":1,"columns":6,"description":"Public video file or HTTPS video URL. Maximum 500 MB for uploaded files. MP4 (H.264) is recommended."}
+ ],
+ "permissions":[], "sort_field":"modified", "sort_order":"DESC", "states":[]
+}

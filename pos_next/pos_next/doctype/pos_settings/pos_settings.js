@@ -3,6 +3,20 @@
 
 frappe.ui.form.on("POS Settings", {
 	refresh(frm) {
+        if (!frm.is_new() && frm.doc.customer_display_enabled && frm.perm?.[0]?.write) {
+            frm.add_custom_button(__("Add Advertising Videos"), () => {
+                new frappe.ui.FileUploader({
+                    doctype: "POS Settings", docname: frm.doc.name, allow_multiple: true, is_private: 0,
+                    restrictions: {allowed_file_types: ["video/*"], max_file_size: 500 * 1024 * 1024},
+                    on_success(file) {
+                        if (!file.file_url || (frm.doc.customer_display_videos || []).some(row => row.video === file.file_url)) return;
+                        frm.add_child("customer_display_videos", {video:file.file_url,title:file.file_name,enabled:1});
+                        frm.refresh_field("customer_display_videos");frm.dirty();
+                    },
+                });
+            }, __("Customer Display"));
+        }
+
 		// Return receipts must use a Sales Invoice print format.
 		frm.set_query("return_invoice_print_format", function () {
 			return {

@@ -82,7 +82,8 @@ def get_pos_settings(pos_profile):
 		if not pos_settings:
 			return DEFAULT_POS_SETTINGS.copy()
 
-		return pos_settings
+		from pos_next.customer_display_media import attach_playlist
+		return attach_playlist(pos_settings)
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Get POS Settings Error")
 		return DEFAULT_POS_SETTINGS.copy()

@@ -9,6 +9,8 @@ from frappe.utils import cint, flt
 class POSSettings(Document):
 	def validate(self):
 		"""Validate POS Settings"""
+		from pos_next.customer_display_media import validate_playlist
+		validate_playlist(self)
 		# A hidden stale Loyalty Program link must not survive after loyalty is
 		# disabled. Clearing it here protects API/Desk saves as well as the UI.
 		if not cint(self.enable_loyalty_program):
@@ -114,6 +116,9 @@ def get_pos_settings(pos_profile):
 	# If no settings exist, create default settings
 	if not settings:
 		settings = create_default_settings(pos_profile)
+
+	from pos_next.customer_display_media import attach_playlist
+	attach_playlist(settings)
 
 	# Inject the current global Stock Settings value for transparency
 	# This helps UI reflect the actual state even if multiple POS Settings exist

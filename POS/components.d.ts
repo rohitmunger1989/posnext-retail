@@ -9,6 +9,8 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ActionButton: typeof import('./src/components/common/ActionButton.vue')['default']
+    AdvertisingVideoPlayer: typeof import('./src/components/customerDisplay/AdvertisingVideoPlayer.vue')['default']
+    AdvertisingVideoSettings: typeof import('./src/components/settings/AdvertisingVideoSettings.vue')['default']
     AutocompleteSelect: typeof import('./src/components/common/AutocompleteSelect.vue')['default']
     BatchSerialDialog: typeof import('./src/components/sale/BatchSerialDialog.vue')['default']
     CashierSuccessDialog: typeof import('./src/components/sale/CashierSuccessDialog.vue')['default']

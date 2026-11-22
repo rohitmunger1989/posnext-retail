@@ -1,3 +1,4 @@
+import { buildOperationDisplay, trackOperationFocus } from "@/utils/operationDisplay";
 import { customerWalletDisabled, customerCreditDisabled, customerLoyaltyDisabled } from "@/utils/customerBenefitPolicy";
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
@@ -97,6 +98,8 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	const completedWalletAdded = ref(0);
 	const customerFinancialKey = ref("");
 	const transactionMode = ref("SALE");
+	const operationPreview = ref(null);
+	let operationChangeSequence = 0;
 	const initialized = ref(false);
 	const terminalId = ref("");
 	const terminalSource = ref("");
@@ -228,6 +231,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 				mode: s.customer_display_idle_mode || "Welcome",
 				image: s.customer_display_idle_image || "",
 				video: s.customer_display_idle_video || "",
+				videos: (s.customer_display_videos || []).map(row => ({video:row.video,title:row.title || "",enabled:row.enabled})),
 			},
 			thank_you: {
 				enabled: enabled(s.cd_enable_thank_you, true),
@@ -451,6 +455,10 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 
 	function syncCartNow() {
 		if (!initialized.value || !isEnabled.value) return;
+		if (operationPreview.value) {
+			publish(buildOperationDisplay(basePayload(operationPreview.value.mode), operationPreview.value, serializeItem));
+			return;
+		}
 
 		const hasItems = (cartStore.invoiceItems || []).length > 0;
 		const currentMode = state.value?.mode || "IDLE";
@@ -566,12 +574,35 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		publish(payload);
 	}
 
+	function setOperationPreview(owner, snapshot) {
+		if (!isEnabled.value || !initialized.value) return;
+		clearTimeout(thankYouTimer);
+		thankYouTimer = null;
+		completedHoldUntil = 0;
+		const clean = JSON.parse(JSON.stringify(snapshot));
+		const customer = typeof clean.customer === "object" ? clean.customer : {name:clean.customer, customer_name:clean.customer_name || clean.customer};
+		clean.customer_name = customerDisplayName(customer, settingsStore.settings.cd_customer_name_mode);
+		const previous = operationPreview.value?.owner === owner ? operationPreview.value : null;
+		const focus = trackOperationFocus(previous, clean);
+		if (focus.changed) operationChangeSequence += 1;
+		operationPreview.value = {...clean, owner, focus_index:focus.index, focus_delta:focus.delta, change_id:operationChangeSequence};
+		syncCartNow();
+	}
+
+	function clearOperationPreview(owner) {
+		if (operationPreview.value?.owner !== owner) return;
+		operationPreview.value = null;
+		syncCartNow();
+	}
+
 	function setTransactionMode(mode = "SALE") {
+		operationPreview.value = null;
 		transactionMode.value = String(mode || "SALE").toUpperCase();
 		if (isEnabled.value) publish(buildCartPayload(transactionMode.value === "SALE" ? undefined : transactionMode.value));
 	}
 
 	function showCompleted({ invoice = null, payment = null, mode = null, extra = null } = {}) {
+		operationPreview.value = null;
 		customerSearchPreview.value = "";
 		if (!isEnabled.value) return;
 		clearTimeout(thankYouTimer);
@@ -629,6 +660,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function clearToIdle() {
+		operationPreview.value = null;
 		customerSearchPreview.value = "";
 		clearTimeout(thankYouTimer);
 		thankYouTimer = null;
@@ -709,6 +741,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function stop() {
+		operationPreview.value = null;
 		customerSearchPreview.value = "";
 		clearTimeout(syncTimer);
 		clearTimeout(thankYouTimer);
@@ -783,6 +816,8 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		initialize,
 		stop,
 		setPayment,
+		setOperationPreview,
+		clearOperationPreview,
 		setTransactionMode,
 		showCompleted,
 		clearToIdle,

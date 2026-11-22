@@ -220,6 +220,9 @@ def _get_pos_settings(pos_profile_doc):
 			or DEFAULT_POS_SETTINGS.copy()
 		)
 
+		from pos_next.customer_display_media import attach_playlist
+		attach_playlist(settings)
+
 		# Derive from POS Profile (single source of truth)
 		settings["allow_write_off_change"] = (
 			1 if (pos_profile_doc.write_off_account and (pos_profile_doc.write_off_limit or 0) > 0) else 0

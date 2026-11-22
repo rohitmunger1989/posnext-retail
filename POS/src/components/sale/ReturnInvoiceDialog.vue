@@ -1363,6 +1363,7 @@
 </template>
 
 <script setup>
+import { useCustomerDisplayStore } from "@/stores/customerDisplay";
 import { customerCreditDisabled, customerWalletDisabled, resolveCustomerBenefitPolicy } from "@/utils/customerBenefitPolicy";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import { playScanError, playScanSuccess } from "@/utils/scannerSound";
@@ -2985,6 +2986,18 @@ async function handleCreateReturn() {
 		isSubmitting.value = false;
 	}
 }
+
+const returnDisplay = useCustomerDisplayStore();
+const returnDisplayOwner = crypto.randomUUID();
+watch(() => ({open:showDialog.value, mode:isExchangeCreditMode.value ? "EXCHANGE" : "RETURN", stage:"RETURN_ITEMS",
+    customer:originalInvoice.value?.customer || "", customer_name:originalInvoice.value?.customer_name || "",
+    reference_invoice:originalInvoice.value?.name || "", total:returnTotal.value,
+    items:selectedItems.value.map(item => ({display_key:item.name || item.sales_invoice_item, item_code:item.item_code, item_name:item.item_name,
+        barcode:item.barcode, image:item.image, qty:item.return_qty, uom:item.uom,
+        rate:item.rate_with_tax ?? item.rate, amount:item.return_qty * (item.rate_with_tax ?? item.rate)}))}),
+    snapshot => { if (snapshot.open) returnDisplay.setOperationPreview(returnDisplayOwner,snapshot); else returnDisplay.clearOperationPreview(returnDisplayOwner); },
+    {deep:true,flush:"post"});
+onUnmounted(() => returnDisplay.clearOperationPreview(returnDisplayOwner));
 
 let returnPolicyGeneration = 0;
 watch(() => [originalInvoice.value?.customer, showDialog.value], async ([id, opened]) => {

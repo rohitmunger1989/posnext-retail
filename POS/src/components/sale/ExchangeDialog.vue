@@ -123,12 +123,13 @@
 </template>
 
 <script setup>
+import { useCustomerDisplayStore } from "@/stores/customerDisplay";
 import NoInvoiceReturnDialog from "@/components/sale/NoInvoiceReturnDialog.vue";
 import RetailItemPicker from "@/components/sale/RetailItemPicker.vue";
 import ReturnInvoiceDialog from "@/components/sale/ReturnInvoiceDialog.vue";
 import { DEFAULT_CURRENCY, formatCurrency as formatCurrencyUtil, roundCurrency } from "@/utils/currency";
 import { Button, Dialog, FeatherIcon } from "frappe-ui";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
 const props = defineProps({
 	modelValue: Boolean,
@@ -279,6 +280,17 @@ async function handleReturnCreated(result) {
 	replacementPickerRef.value?.focusInput?.();
 	returnHandoffInProgress.value = false;
 }
+const exchangeDisplay = useCustomerDisplayStore();
+const exchangeDisplayOwner = crypto.randomUUID();
+watch(() => ({open:props.modelValue && replacementDialogOpen.value, mode:"EXCHANGE", stage:"REPLACEMENT_ITEMS",
+    customer:returnCustomer.value, customer_name:returnResult.value?.customer_name || "",
+    reference_invoice:returnResult.value?.name || "", total:replacementTotal.value, return_credit:returnCredit.value,
+    items:replacementItems.value.map(item => ({display_key:item.key, item_code:item.item_code, item_name:item.item_name,
+        barcode:item.barcode, image:item.image, qty:item.qty, rate:item.rate, amount:item.qty * item.rate, uom:item.uom}))}),
+    snapshot => { if (snapshot.open) exchangeDisplay.setOperationPreview(exchangeDisplayOwner,snapshot); else exchangeDisplay.clearOperationPreview(exchangeDisplayOwner); },
+    {deep:true,flush:"post"});
+onUnmounted(() => exchangeDisplay.clearOperationPreview(exchangeDisplayOwner));
+
 function addReplacementItem(item, qty = 1) {
 	if (item?.has_serial_no || item?.has_batch_no) {
 		errorMessage.value = __(

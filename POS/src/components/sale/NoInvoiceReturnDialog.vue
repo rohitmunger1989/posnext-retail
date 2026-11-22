@@ -164,6 +164,7 @@
 </template>
 
 <script setup>
+import { useCustomerDisplayStore } from "@/stores/customerDisplay";
 import { customerCreditDisabled, resolveCustomerBenefitPolicy } from "@/utils/customerBenefitPolicy";
 import CustomerDialog from "@/components/sale/CustomerDialog.vue";
 import RetailItemPicker from "@/components/sale/RetailItemPicker.vue";
@@ -171,7 +172,7 @@ import { useToast } from "@/composables/useToast";
 import { call } from "@/utils/apiWrapper";
 import { DEFAULT_CURRENCY, formatCurrency as formatCurrencyUtil, roundCurrency } from "@/utils/currency";
 import { Button, Dialog, FeatherIcon } from "frappe-ui";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 
 const props = defineProps({
 	modelValue: Boolean,
@@ -425,6 +426,16 @@ function reset() {
 	requireManagerPinCash.value = true;
 	requireManagerPinRateOverride.value = true;
 }
+
+const returnDisplay = useCustomerDisplayStore();
+const returnDisplayOwner = crypto.randomUUID();
+watch(() => ({open:show.value, mode:isExchangeCredit.value ? "EXCHANGE" : "RETURN", stage:"RETURN_ITEMS",
+    customer:selectedCustomer.value, customer_name:customerDisplay.value, total:estimatedTotal.value,
+    items:items.value.map(item => ({display_key:item.key, item_code:item.item_code, item_name:item.item_name, barcode:item.barcode,
+        image:item.image, qty:item.qty, rate:item.rate, amount:item.qty * item.rate, uom:item.uom}))}),
+    snapshot => { if (snapshot.open) returnDisplay.setOperationPreview(returnDisplayOwner,snapshot); else returnDisplay.clearOperationPreview(returnDisplayOwner); },
+    {deep:true,flush:"post"});
+onUnmounted(() => returnDisplay.clearOperationPreview(returnDisplayOwner));
 
 let policyGeneration = 0;
 watch(() => [customerName.value, show.value], async ([id, opened]) => {

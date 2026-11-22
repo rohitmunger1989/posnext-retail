@@ -158,6 +158,7 @@ DEFAULT_POS_SETTINGS = {
 	"customer_display_idle_mode": 'Welcome',
 	"customer_display_idle_image": '',
 	"customer_display_idle_video": '',
+	"customer_display_videos": [],
 	"customer_display_overlay_enabled": 0,
 	"customer_display_overlay_text": '',
 	"customer_display_overlay_type": 'Scrolling',

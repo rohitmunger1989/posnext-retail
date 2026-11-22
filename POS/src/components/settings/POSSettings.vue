@@ -87,6 +87,7 @@
 							<Button
 								@click="saveSettings"
 								:loading="saving"
+                                :disabled="videoUploading"
 								variant="solid"
 								theme="blue"
 							>
@@ -1181,7 +1182,9 @@
 											<h4 class="text-sm font-semibold text-gray-900">{{ __("Idle & Thank You") }}</h4>
 											<label class="text-xs font-medium text-gray-700">{{ __("Idle Display Mode") }}<select v-model="settings.customer_display_idle_mode" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option>Welcome</option><option>Image</option><option>Video</option></select></label>
 											<label v-if="settings.customer_display_idle_mode === 'Image'" class="text-xs font-medium text-gray-700">{{ __("Promotional Image URL / File") }}<input v-model="settings.customer_display_idle_image" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
-											<label v-if="settings.customer_display_idle_mode === 'Video'" class="text-xs font-medium text-gray-700">{{ __("Promotional Video URL / File") }}<input v-model="settings.customer_display_idle_video" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+                                            <AdvertisingVideoSettings v-if="settings.customer_display_idle_mode === 'Video'"
+                                                v-model="settings.customer_display_videos" :legacy-video="settings.customer_display_idle_video || ''"
+                                                :pos-profile="props.posProfile" :settings-name="settings.name" @uploading="videoUploading = $event" />
                                             <div class="rounded-lg border border-blue-100 bg-blue-50/60 p-3 flex flex-col gap-3">
                                                 <CheckboxField v-model="settings.customer_display_overlay_enabled" :label="__('Enable Idle Text Overlay')" />
                                                 <template v-if="settings.customer_display_overlay_enabled">
@@ -1260,6 +1263,7 @@
 </template>
 
 <script setup>
+import AdvertisingVideoSettings from "@/components/settings/AdvertisingVideoSettings.vue";
 import CheckboxField from "@/components/settings/CheckboxField.vue";
 import NumberField from "@/components/settings/NumberField.vue";
 import SelectField from "@/components/settings/SelectField.vue";
@@ -1321,6 +1325,7 @@ const customerDisplayVisibilityFields = [
 
 const loading = ref(true);
 const saving = ref(false);
+const videoUploading = ref(false);
 const qzTestPrinting = ref(false);
 const warehousesList = ref([]);
 const selectedWarehouse = ref(props.currentWarehouse || "");
@@ -1642,6 +1647,7 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+	if (videoUploading.value) { showError(__("Wait for the video upload to finish before saving.")); return; }
 	if (!props.posProfile) {
 		showError(__("POS Profile not found"));
 		return;

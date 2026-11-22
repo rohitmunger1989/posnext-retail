@@ -49,15 +49,9 @@
 			</div>
 			<main class="display-main">
 				<section v-if="mode === 'IDLE'" class="idle-screen">
-					<video
-						v-if="idleMode === 'Video' && displayState?.idle?.video"
-						:src="displayState.idle.video"
-						class="idle-media"
-						autoplay
-						muted
-						loop
-						playsinline
-					></video>
+                    <AdvertisingVideoPlayer v-if="idleMode === 'Video'" :videos="displayState?.idle?.videos || []" :legacy-video="displayState?.idle?.video || ''">
+                        <div class="welcome-panel"><h1 v-if="visible('company_name')">{{ displayState?.company?.name }}</h1><p v-if="visible('welcome_text')">{{ displayState?.company?.welcome_text }}</p></div>
+                    </AdvertisingVideoPlayer>
 					<img
 						v-else-if="idleMode === 'Image' && displayState?.idle?.image"
 						:src="displayState.idle.image"
@@ -88,12 +82,30 @@
 					<PaymentSummary :state="displayState" :currency="currencyLabel" />
 				</section>
 
-				<section v-else-if="mode === 'RETURN' || mode === 'EXCHANGE'" class="message-screen return-screen">
+				<section v-else-if="mode === 'RETURN' || mode === 'EXCHANGE'" class="message-screen return-screen" :class="{ 'operation-preview': displayState?.transaction?.phase === 'PREVIEW' }">
 					<div class="mode-badge">{{ mode }}</div>
 					<h1>{{ mode === 'RETURN' ? 'Return / Refund' : 'Exchange' }}</h1>
 					<p v-if="displayState?.transaction?.invoice_number && visible('invoice_number')">
 						{{ displayState.transaction.invoice_number }}
 					</p>
+                    <template v-if="displayState?.transaction?.phase === 'PREVIEW'">
+                        <p class="operation-stage">{{ displayState.transaction.stage === 'REPLACEMENT_ITEMS' ? 'Selecting replacement items · estimated amounts' : 'Selecting return items · estimated amounts' }}</p>
+                        <p v-if="visible('customer_name') && displayState?.customer?.name" class="operation-customer">{{ displayState.customer.name }}</p>
+                        <p v-if="visible('invoice_number') && displayState.transaction.reference_invoice" class="operation-reference">{{ displayState.transaction.reference_invoice }}</p>
+                        <div ref="operationItemsRef" class="operation-items" role="list" aria-live="polite">
+                            <div v-for="(item, index) in displayState.items" :key="item.display_key || `${item.item_code}-${index}`" :data-operation-index="index" class="operation-row" :class="{ 'operation-latest': item.display_key === highlightedOperationKey }" role="listitem">
+                                <img v-if="visible('product_image') && item.image" :src="item.image" alt="" class="operation-image" />
+                                <div class="operation-item-name"><strong v-if="visible('item_name')">{{ item.item_name }}</strong><small v-if="visible('barcode') && item.barcode">{{ item.barcode }}</small></div>
+                                <span v-if="visible('quantity')">× {{ formatQty(item.quantity) }}</span>
+                                <strong v-if="visible('final_price')">{{ money(item.line_total) }}</strong>
+                            </div>
+                            <p v-if="!displayState.items?.length" class="operation-empty">Scan or select an item to begin</p>
+                        </div>
+                        <div v-if="visible('grand_total') && displayState.transaction.return_credit !== null" class="operation-exchange-totals">
+                            <span>Return credit: <strong>{{ money(displayState.transaction.return_credit) }}</strong></span>
+                            <span>Estimated difference: <strong>{{ money(displayState.transaction.estimated_difference) }}</strong></span>
+                        </div>
+                    </template>
 					<CartSummary :state="displayState" :currency="currencyLabel" compact />
 					<PaymentSummary :state="displayState" :currency="currencyLabel" />
 				</section>
@@ -200,6 +212,7 @@
 </template>
 
 <script setup>
+import AdvertisingVideoPlayer from "@/components/customerDisplay/AdvertisingVideoPlayer.vue";
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { usePOSSettingsStore } from "@/stores/posSettings";
@@ -213,6 +226,12 @@ const profile = computed(() => String(route.query.profile || "").trim());
 const terminalId = ref(String(route.query.terminal || "").trim());
 const displayState = ref(null);
 const highlightedCartIndex = ref(-1);
+const operationItemsRef = ref(null);
+const highlightedOperationKey = ref(null);
+let operationHighlightTimer = null;
+let lastOperationChangeId = null;
+let lastOperationSignature = "";
+let operationRenderGeneration = 0;
 let cartHighlightTimer = null;
 const connected = ref(false);
 const now = ref(new Date());
@@ -329,6 +348,40 @@ async function applyState(payload) {
     displayState.value = payload;
     markLive();
 
+    if (payload.transaction?.phase === "PREVIEW") {
+        const index = Number(payload.latest_item_index);
+        const signature = JSON.stringify((payload.items || []).map(item => [item.display_key, item.quantity]));
+        const changeId = payload.operation_change_id;
+        const changed = changeId !== lastOperationChangeId || signature !== lastOperationSignature;
+        lastOperationChangeId = changeId;
+        lastOperationSignature = signature;
+        if (changed) {
+            const operationGeneration = ++operationRenderGeneration;
+            clearTimeout(operationHighlightTimer);
+            highlightedOperationKey.value = payload.items?.[index]?.display_key || null;
+            await nextTick();
+            if (operationGeneration !== operationRenderGeneration) return;
+            const container = operationItemsRef.value;
+            const row = container?.querySelectorAll("[data-operation-index]")?.[index];
+            if (container && row) {
+                const outer = container.getBoundingClientRect(), rect = row.getBoundingClientRect();
+                // Scroll this list only, keeping the page and totals stationary.
+                if (rect.top < outer.top || rect.bottom > outer.bottom) {
+                    const top = Math.max(0, container.scrollTop + rect.top - outer.top - Math.max(0,(container.clientHeight - rect.height)/2));
+                    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+                    container.scrollTo({top, behavior:reduced ? "auto" : "smooth"});
+                }
+            }
+            operationHighlightTimer = setTimeout(() => { highlightedOperationKey.value = null; }, 1500);
+        }
+        return;
+    }
+    operationRenderGeneration += 1;
+    clearTimeout(operationHighlightTimer);
+    highlightedOperationKey.value = null;
+    lastOperationChangeId = null;
+    lastOperationSignature = "";
+
     const latestIndex = Number(payload.latest_item_index);
     const quantityDelta = Number(payload.latest_quantity_delta || 0);
 
@@ -392,7 +445,7 @@ const CartSummary = defineComponent({
 			if (v.running_qty !== false) rows.push(["Total Qty", fmtQty(t.quantity), "qty"]);
 			if (!props.compact && v.subtotal !== false) rows.push(["Subtotal", fmt(t.subtotal), "subtotal"]);
 			if (!props.compact && v.total_discount !== false && Number(t.discount || 0) > 0) rows.push(["Discount", `-${fmt(t.discount)}`, "discount"]);
-			if (v.grand_total !== false) rows.push(["Grand Total", fmt(t.grand_total), "grand"]);
+			if (v.grand_total !== false) rows.push([props.state?.transaction?.phase === "PREVIEW" ? (props.state.transaction.stage === "REPLACEMENT_ITEMS" ? "Estimated replacement" : "Estimated return") : "Grand Total", fmt(t.grand_total), "grand"]);
 			return h("div", { class: ["totals-card", props.compact ? "compact" : "summary-strip"] }, rows.map(([label, value, type]) =>
 				h("div", { class: ["summary-tile", type] }, [h("span", label), h("strong", String(value))])
 			));
@@ -452,6 +505,8 @@ const PaymentSummary = defineComponent({
 
 onUnmounted(() => {
         clearTimeout(cartHighlightTimer);
+        clearTimeout(operationHighlightTimer);
+        operationRenderGeneration += 1;
 });
 
 onMounted(async () => {
@@ -716,4 +771,24 @@ onUnmounted(() => {
  .is-compact .payment-tile{min-height:40px}
 }
 
+</style>
+
+<style scoped>
+.operation-preview { justify-content:flex-start; gap:10px; padding:20px; overflow:hidden; }
+.operation-preview h1 { font-size:clamp(28px,4vw,54px); margin:0; flex-shrink:0; }
+.operation-preview .operation-stage,.operation-preview .operation-customer,.operation-preview .operation-reference { font-size:clamp(14px,1.5vw,22px); margin:0; flex-shrink:0; }
+.operation-items { width:min(980px,95%); flex:1; min-height:70px; overflow:auto; text-align:left; border:1px solid currentColor; border-radius:12px; }
+.operation-row { display:flex; align-items:center; gap:16px; padding:14px; border-bottom:1px solid rgba(128,128,128,.3); font-size:clamp(16px,2vw,26px); }
+.operation-item-name { flex:1; min-width:0; overflow-wrap:anywhere; display:flex; flex-direction:column; gap:5px; }
+.operation-item-name small { opacity:.7; font-size:.7em; }
+.operation-image { width:60px; height:60px; object-fit:contain; flex-shrink:0; border-radius:8px; }
+.operation-empty { padding:24px; text-align:center; opacity:.7; }
+.operation-exchange-totals { display:flex; flex-wrap:wrap; justify-content:center; gap:24px; font-size:clamp(16px,2vw,24px); }
+.operation-preview .totals-card { flex-shrink:0; }
+</style>
+
+<style scoped>
+.operation-row { transition:background-color .2s,box-shadow .2s; }
+.operation-row.operation-latest { background:rgba(40,155,255,.24); box-shadow:inset 5px 0 0 #38a7ff; }
+@media(prefers-reduced-motion:reduce) { .operation-row { transition:none; } }
 </style>
