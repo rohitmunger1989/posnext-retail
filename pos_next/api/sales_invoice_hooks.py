@@ -7,6 +7,7 @@ Event handlers for Sales Invoice document events
 """
 
 import frappe
+from pos_next.customer_benefit_policy import loyalty_disabled
 from frappe import _
 from frappe.utils import cint
 
@@ -77,6 +78,10 @@ def auto_assign_loyalty_program_on_invoice(doc):
 	is enabled, the configured default is assigned only if the customer does not
 	already have a loyalty program.
 	"""
+	if loyalty_disabled(doc.customer):
+		from pos_next.customer_benefit_policy import clear_invoice_loyalty
+		clear_invoice_loyalty(doc)
+		return
 	if not doc.is_pos or not doc.pos_profile or not doc.customer:
 		return
 

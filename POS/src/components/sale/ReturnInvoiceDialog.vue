@@ -750,6 +750,7 @@
 				</div>
 
 				<!-- Exchange credit deliberately skips refund/provider settlement here. -->
+				<p v-if="originalInvoice && ((isExchangeCreditMode && exchangeCreditBlocked) || (!isExchangeCreditMode && creditRefundBlocked))" role="alert" class="text-sm text-amber-700 mb-3">{{ __("Customer Credit is unavailable for this customer. Use an allowed refund to the original payment source. Exchange credit requires Customer Credit to be enabled.") }}</p>
 				<div v-if="selectedItems.length > 0 && isExchangeCreditMode" class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-start">
 					<div class="flex items-start gap-3">
 						<FeatherIcon name="repeat" class="w-5 h-5 text-emerald-600 mt-0.5" />
@@ -828,7 +829,7 @@
 
 					<!-- Add to Customer Credit Option (only for non-credit sales) -->
 					<div
-						v-if="!isOriginalCreditSale && !paymentHubManaged"
+						v-if="!isOriginalCreditSale && !paymentHubManaged && !creditRefundBlocked"
 						class="bg-emerald-50 rounded-xl p-4 border border-emerald-200 mb-4"
 					>
 						<label class="flex items-start gap-3 cursor-pointer">
@@ -1362,6 +1363,7 @@
 </template>
 
 <script setup>
+import { customerCreditDisabled, customerWalletDisabled, resolveCustomerBenefitPolicy } from "@/utils/customerBenefitPolicy";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import { playScanError, playScanSuccess } from "@/utils/scannerSound";
 import { useOfflineStatus } from "@/composables/useOfflineStatus";
@@ -1416,6 +1418,9 @@ const isExchangeCreditMode = computed(() => props.settlementMode === "exchange-c
 
 // State
 const originalInvoice = ref(null);
+const returnCustomerPolicy = ref(null);
+const exchangeCreditBlocked = computed(() => customerCreditDisabled(returnCustomerPolicy.value));
+const creditRefundBlocked = computed(() => exchangeCreditBlocked.value || customerWalletDisabled(returnCustomerPolicy.value));
 // Stores the return document created by ERPNext's make_sales_return().
 // Contains sales_team, taxes, and other child tables copied from the original invoice.
 const preparedReturnDoc = ref(null);
@@ -1990,6 +1995,8 @@ const paymentSelectStyle = {
 };
 
 const canCreateReturn = computed(() => {
+	if (isExchangeCreditMode.value && exchangeCreditBlocked.value) return false;
+	if (addToCustomerCredit.value && creditRefundBlocked.value) return false;
 	const hasSelectedItems = selectedItems.value.length > 0;
 	if (!hasSelectedItems || !hasOpenShift.value) return false;
 	if (isExchangeCreditMode.value) return true;
@@ -1998,6 +2005,7 @@ const canCreateReturn = computed(() => {
 	// the eligible excess; when selected, require a current-profile Cash mode and
 	// (when configured) a Manager POS PIN. Any non-cash excess remains Customer Credit.
 	if (isOriginalCreditSale.value) {
+		if (exchangeCreditBlocked.value && Number(creditSaleRefundableExcess.value || 0) > Number(normalizedCreditSaleCashRefund.value || 0) + 0.0005) return false;
 		if (!creditSaleCashRefundEnabled.value || normalizedCreditSaleCashRefund.value <= 0) return true;
 		if (normalizedCreditSaleCashRefund.value > creditSaleRefundableExcess.value + 0.0005) return false;
 		if (!creditSaleCashMode.value) return false;
@@ -2977,6 +2985,17 @@ async function handleCreateReturn() {
 		isSubmitting.value = false;
 	}
 }
+
+let returnPolicyGeneration = 0;
+watch(() => [originalInvoice.value?.customer, showDialog.value], async ([id, opened]) => {
+    const generation = ++returnPolicyGeneration;
+    returnCustomerPolicy.value = null;
+    if (!opened || !id) return;
+    const customer = await resolveCustomerBenefitPolicy({name: id});
+    if (generation === returnPolicyGeneration && originalInvoice.value?.customer === id && showDialog.value) {
+        returnCustomerPolicy.value = customer;
+    }
+});
 
 watch(creditSaleCashRefundEnabled, (enabled) => {
 	if (enabled) {

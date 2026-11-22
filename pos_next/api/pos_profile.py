@@ -260,6 +260,9 @@ def get_default_customer(pos_profile):
 				"customer": default_customer,
 				"customer_name": customer_doc.customer_name,
 				"customer_group": customer_doc.customer_group,
+				"custom_pos_disable_loyalty": int(customer_doc.get("custom_pos_disable_loyalty") or 0),
+				"custom_pos_disable_wallet": int(customer_doc.get("custom_pos_disable_wallet") or 0),
+				"custom_pos_disable_credit": int(customer_doc.get("custom_pos_disable_credit") or 0),
 			}
 
 		return {"customer": None}

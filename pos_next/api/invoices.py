@@ -7,6 +7,7 @@ import json
 from functools import lru_cache
 
 import frappe
+from pos_next.customer_benefit_policy import loyalty_disabled
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
 from erpnext.stock.doctype.batch.batch import get_batch_no, get_batch_qty
 from frappe import _
@@ -588,6 +589,10 @@ def _apply_pos_loyalty_policy(invoice_doc, pos_profile=None):
 	Customer master because the same customer may use a different POS Profile where
 	loyalty is enabled.
 	"""
+	if loyalty_disabled(invoice_doc.get("customer")):
+		from pos_next.customer_benefit_policy import clear_invoice_loyalty
+		clear_invoice_loyalty(invoice_doc)
+		return
 	profile = pos_profile or invoice_doc.get("pos_profile")
 	if not profile or invoice_doc.doctype != "Sales Invoice":
 		return
@@ -766,6 +771,9 @@ def validate_return_items(original_invoice_name, return_items, doctype="Sales In
 
 def _validate_pos_return_feature_flags(invoice, data=None):
 	"""Enforce POS Settings return/exchange feature gates server-side."""
+	if isinstance(invoice, dict):
+		from pos_next.customer_benefit_policy import validate_return_settlement
+		validate_return_settlement(invoice, data)
 	if not isinstance(invoice, dict):
 		return
 	if invoice.get("doctype", "Sales Invoice") != "Sales Invoice":

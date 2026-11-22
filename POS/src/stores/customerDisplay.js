@@ -1,3 +1,4 @@
+import { customerWalletDisabled, customerCreditDisabled, customerLoyaltyDisabled } from "@/utils/customerBenefitPolicy";
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 import { usePOSCartStore } from "./posCart";
@@ -301,14 +302,18 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		customerFinancialKey.value = requestKey;
 		completedWalletAdded.value = 0;
 
+		customerCreditBalance.value = null;
+		customerWalletBalance.value = null;
+		customerWalletProgram.value = "";
+		customerWalletEnabled.value = false;
 		const requests = [];
-		if (visibility().customer_credit) {
+		if (visibility().customer_credit && !customerCreditDisabled(customer)) {
 			requests.push(
 				call("pos_next.api.credit_sales.get_customer_balance", { customer: key, company })
 					.then((result) => ({ type: "credit", result }))
 			);
 		}
-		if (visibility().loyalty_points || visibility().loyalty_earned) {
+		if ((visibility().loyalty_points || visibility().loyalty_earned) && !customerWalletDisabled(customer)) {
 			requests.push(
 				call("pos_next.api.wallet.get_wallet_info", {
 					customer: key,
@@ -331,7 +336,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 			} else if (type === "wallet") {
 				customerWalletEnabled.value = Boolean(number(data.wallet_enabled));
 				customerWalletBalance.value = number(data.wallet_balance);
-				customerWalletProgram.value = String(customer?.loyalty_program || data.loyalty_program || "");
+				customerWalletProgram.value = (customerLoyaltyDisabled(customer) ? "" : String(customer?.loyalty_program || data.loyalty_program || ""));
 			}
 		}
 

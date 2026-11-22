@@ -3,6 +3,7 @@
 
 frappe.ui.form.on("Customer", {
 	refresh(frm) {
+		frm.toggle_enable("loyalty_program", !frm.doc.custom_pos_disable_loyalty);
 		frm.set_query("custom_district", () => {
 			return {
 				filters: {
@@ -10,6 +11,11 @@ frappe.ui.form.on("Customer", {
 				},
 			};
 		});
+	},
+
+	custom_pos_disable_loyalty(frm) {
+		frm.toggle_enable("loyalty_program", !frm.doc.custom_pos_disable_loyalty);
+		if (frm.doc.custom_pos_disable_loyalty) frm.set_value("loyalty_program", null);
 	},
 
 	custom_governorate(frm) {

@@ -4,6 +4,7 @@ Handles customer search, creation, and management for POS operations
 """
 
 import frappe
+from pos_next.customer_benefit_policy import loyalty_disabled
 from frappe import _
 from frappe.utils import cint
 
@@ -61,7 +62,7 @@ def get_customers(search_term="", pos_profile=None, limit=20, modified_since=Non
 			"Customer",
 			filters=filters,
 			or_filters=or_filters or None,
-			fields=["name", "customer_name", "mobile_no", "email_id", "disabled"],
+			fields=["name", "customer_name", "mobile_no", "email_id", "disabled", "custom_pos_disable_loyalty", "custom_pos_disable_wallet", "custom_pos_disable_credit"],
 			limit=customer_limit,
 			order_by="customer_name asc",
 		)
@@ -192,6 +193,8 @@ def auto_assign_loyalty_program(doc, method=None):
 	    doc: Customer document
 	    method: Hook method name (not used)
 	"""
+	if loyalty_disabled(doc):
+		return
 	# Skip if customer already has a loyalty program
 	if doc.loyalty_program:
 		return

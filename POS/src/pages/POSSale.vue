@@ -547,10 +547,10 @@
 				:pos-profile="shiftStore.profileName"
 				:currency="shiftStore.profileCurrency"
 				:is-offline="offlineStore.isOffline"
-				:allow-partial-payment="posSettingsStore.allowPartialPayment"
-				:allow-credit-sale="posSettingsStore.allowCreditSale"
-				:allow-customer-credit-payment="posSettingsStore.allowCustomerCreditPayment || autoApplyExchangeCredit"
-				:auto-apply-customer-credit="autoApplyExchangeCredit"
+				:allow-partial-payment="!customerCreditDisabled(cartStore.customer) && posSettingsStore.allowPartialPayment"
+				:allow-credit-sale="!customerCreditDisabled(cartStore.customer) && posSettingsStore.allowCreditSale"
+				:allow-customer-credit-payment="!customerCreditDisabled(cartStore.customer) && (posSettingsStore.allowCustomerCreditPayment || autoApplyExchangeCredit)"
+				:auto-apply-customer-credit="!customerCreditDisabled(cartStore.customer) && autoApplyExchangeCredit"
 				:auto-apply-customer-credit-origin="exchangeCreditOrigin"
 				:auto-apply-customer-credit-source="exchangeCreditSource"
 				:allow-write-off="posSettingsStore.allowWriteOffChange"
@@ -1090,6 +1090,7 @@ let _posInitPromise = null;
 </script>
 
 <script setup>
+import { customerCreditDisabled } from "@/utils/customerBenefitPolicy";
 import { syncFloatQueue, syncOfflineDrawers, ensureOfflineFloatDefaults } from "@/utils/offline/floatQueue";
 import FloatAdditionDialog from "@/components/sale/FloatAdditionDialog.vue";
 

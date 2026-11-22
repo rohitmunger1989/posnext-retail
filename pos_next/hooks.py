@@ -101,8 +101,8 @@ fixtures = [
 # ------------
 
 # before_install = "pos_next.install.before_install"
-after_install = ["pos_next.install.after_install", "pos_next.setup_float_history.ensure_float_history_workspace"]
-after_migrate = ["pos_next.install.after_migrate", "pos_next.setup_float_history.ensure_float_history_workspace"]
+after_install = ["pos_next.install.after_install", "pos_next.setup_float_history.ensure_float_history_workspace", "pos_next.customer_benefit_policy.setup"]
+after_migrate = ["pos_next.install.after_migrate", "pos_next.setup_float_history.ensure_float_history_workspace", "pos_next.customer_benefit_policy.setup"]
 
 # Uninstallation
 # ------------
@@ -143,7 +143,11 @@ override_doctype_class = {"Sales Invoice": "pos_next.overrides.sales_invoice.Cus
 # Hook on document methods and events
 
 doc_events = {
+	"Wallet": {"validate": "pos_next.customer_benefit_policy.validate_wallet"},
+	"Wallet Transaction": {"before_validate": "pos_next.customer_benefit_policy.validate_wallet_transaction", "before_submit": "pos_next.customer_benefit_policy.validate_wallet_transaction"},
+	"Loyalty Point Entry": {"before_insert": "pos_next.customer_benefit_policy.validate_loyalty_entry"},
 	"Customer": {
+		"validate": "pos_next.customer_benefit_policy.validate_customer",
 		"after_insert": [
 			"pos_next.api.customers.auto_assign_loyalty_program",
 			"pos_next.realtime_events.emit_customer_event",
@@ -157,8 +161,10 @@ doc_events = {
 		"validate": [
 			"pos_next.api.sales_invoice_hooks.validate",
 			"pos_next.api.wallet.validate_wallet_payment",
+			"pos_next.customer_benefit_policy.validate_invoice",
 			"pos_next.overrides.pricing_rule.apply_min_max_price_discounts",
 		],
+		"before_submit": "pos_next.customer_benefit_policy.before_submit_invoice",
 		"before_cancel": "pos_next.api.sales_invoice_hooks.before_cancel",
 		"on_submit": [
 			"pos_next.realtime_events.emit_stock_update_event",

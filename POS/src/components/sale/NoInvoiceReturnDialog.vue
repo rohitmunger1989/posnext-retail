@@ -99,10 +99,11 @@
 					<textarea v-model="reason" rows="2" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" :placeholder="__('Required: explain why this return is accepted without an invoice')"></textarea>
 				</div>
 
+				<p v-if="creditBlocked" role="alert" class="text-sm text-amber-700">{{ __("Customer Credit is disabled for this customer. Choose Cash Refund if permitted, or select an eligible customer for exchange credit.") }}</p>
 				<div v-if="!isExchangeCredit" class="rounded-xl border border-gray-200 p-3 sm:p-4">
 					<p class="text-sm font-bold text-gray-800 mb-2 text-start">{{ __("Settlement") }}</p>
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-						<button type="button" :class="settlementClass('credit')" @click="refundType = 'credit'">
+						<button type="button" :class="settlementClass('credit')" :disabled="creditBlocked" @click="!creditBlocked && (refundType = 'credit')">
 							<div class="text-start"><p class="text-sm font-bold">{{ __("Customer Credit") }}</p><p class="text-xs opacity-80 mt-0.5">{{ __("Recommended for no-invoice returns") }}</p></div>
 						</button>
 						<button type="button" :class="settlementClass('cash')" @click="refundType = 'cash'">
@@ -163,6 +164,7 @@
 </template>
 
 <script setup>
+import { customerCreditDisabled, resolveCustomerBenefitPolicy } from "@/utils/customerBenefitPolicy";
 import CustomerDialog from "@/components/sale/CustomerDialog.vue";
 import RetailItemPicker from "@/components/sale/RetailItemPicker.vue";
 import { useToast } from "@/composables/useToast";
@@ -190,6 +192,7 @@ const show = computed({
 const isExchangeCredit = computed(() => props.settlementMode === "exchange-credit");
 const dialogTitle = computed(() => isExchangeCredit.value ? __("Exchange — Return Without Invoice") : __("Return Without Invoice"));
 const selectedCustomer = ref(props.customer || null);
+const creditBlocked = computed(() => customerCreditDisabled(selectedCustomer.value));
 const customerName = computed(() => selectedCustomer.value?.name || selectedCustomer.value || "");
 const customerDisplay = computed(
 	() => selectedCustomer.value?.customer_name || selectedCustomer.value?.name || selectedCustomer.value || ""
@@ -229,6 +232,7 @@ const managerReason = computed(() => {
 		: __("Manager POS PIN is required by this POS Profile.");
 });
 const canSubmit = computed(() => {
+	if (creditBlocked.value && (isExchangeCredit.value || refundType.value === "credit")) return false;
 	if (submitting.value || !customerName.value || items.value.length === 0 || !reason.value.trim()) return false;
 	if (!isExchangeCredit.value && refundType.value === "cash" && !cashMode.value) return false;
 	if (managerRequired.value && managerPin.value.length < 4) return false;
@@ -316,6 +320,7 @@ function removeItem(item) {
 	items.value = items.value.filter((row) => row.key !== item.key);
 }
 function settlementClass(type) {
+	if (type === "credit" && creditBlocked.value) return "rounded-xl border-2 p-3 border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed";
 	const active = refundType.value === type;
 	return [
 		"rounded-xl border-2 p-3 transition-colors",
@@ -357,6 +362,9 @@ async function loadOptions() {
 }
 
 async function submit() {
+	if (creditBlocked.value && (isExchangeCredit.value || refundType.value === "credit")) {
+		errorMessage.value = __("Customer Credit is disabled for this customer."); return;
+	}
 	if (!canSubmit.value) return;
 	submitting.value = true;
 	errorMessage.value = "";
@@ -417,6 +425,14 @@ function reset() {
 	requireManagerPinCash.value = true;
 	requireManagerPinRateOverride.value = true;
 }
+
+let policyGeneration = 0;
+watch(() => [customerName.value, show.value], async ([id, opened]) => {
+    const generation = ++policyGeneration;
+    if (!opened || !id) return;
+    const resolved = await resolveCustomerBenefitPolicy(selectedCustomer.value);
+    if (generation === policyGeneration && customerName.value === id && show.value) selectedCustomer.value = resolved;
+});
 
 watch(show, async (opened) => {
 	if (!opened) return;

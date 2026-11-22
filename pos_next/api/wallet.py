@@ -7,6 +7,7 @@ Handles wallet payments, validation, and loyalty points conversion
 """
 
 import frappe
+from pos_next.customer_benefit_policy import loyalty_disabled, wallet_disabled, reject_feature
 from frappe import _
 from frappe.utils import cint, flt
 
@@ -43,6 +44,8 @@ def process_loyalty_to_wallet(doc, method=None):
 	Convert earned loyalty points to wallet balance after invoice submission.
 	Called during on_submit hook.
 	"""
+	if loyalty_disabled(doc.customer) or wallet_disabled(doc.customer):
+		return
 	if not doc.is_pos or doc.is_return:
 		return
 
@@ -172,6 +175,8 @@ def get_customer_wallet_balance(customer, company=None, exclude_invoice=None):
 	Returns:
 		float: Available wallet balance
 	"""
+	if wallet_disabled(customer):
+		return 0.0
 	try:
 		from erpnext.accounts.utils import get_balance_on
 
@@ -231,6 +236,8 @@ def get_pending_wallet_payments(customer, exclude_invoice=None):
 @frappe.whitelist()
 def get_customer_wallet(customer, company=None):
 	"""Get wallet details for a customer."""
+	if wallet_disabled(customer):
+		return None
 	filters = {"customer": customer}
 	if company:
 		filters["company"] = company
@@ -252,6 +259,8 @@ def get_customer_wallet(customer, company=None):
 def create_wallet_on_customer_insert(doc, method=None):
 	"""Hook: after_insert on Customer. Creates a wallet for the default company
 	only when auto_create_wallet is enabled in POS Settings."""
+	if wallet_disabled(doc.name):
+		return
 	company = frappe.get_cached_value("Global Defaults", "Global Defaults", "default_company")
 	if not company:
 		return
@@ -274,6 +283,7 @@ def create_wallet_on_customer_insert(doc, method=None):
 @frappe.whitelist()
 def get_or_create_wallet(customer, company, pos_settings=None, force_create=False):
 	"""Get existing wallet or create a new one."""
+	reject_feature(customer, "wallet")
 
 	# Check if wallet exists
 	wallet = frappe.db.get_value(
@@ -396,6 +406,9 @@ def get_wallet_info(customer, company, pos_profile=None):
 		"loyalty_to_wallet": False,
 	}
 
+	if wallet_disabled(customer):
+		return result
+
 	# Check if loyalty program is enabled in POS Settings
 	if pos_profile:
 		pos_settings = get_pos_settings(pos_profile)
@@ -405,6 +418,10 @@ def get_wallet_info(customer, company, pos_profile=None):
 			result["auto_create"] = cint(pos_settings.get("auto_create_wallet"))
 			result["loyalty_program"] = pos_settings.get("default_loyalty_program")
 			result["loyalty_to_wallet"] = cint(pos_settings.get("loyalty_to_wallet"))
+
+	if loyalty_disabled(customer):
+		result["loyalty_program"] = None
+		result["loyalty_to_wallet"] = False
 
 	if not result["wallet_enabled"]:
 		return result
@@ -453,7 +470,7 @@ def get_wallet_display_summary(customer, company, pos_profile=None, invoice=None
 	result = {
 		"wallet_enabled": cint(info.get("wallet_enabled")),
 		"wallet_exists": bool(info.get("wallet_exists")),
-		"loyalty_program": frappe.db.get_value("Customer", customer, "loyalty_program") or info.get("loyalty_program"),
+		"loyalty_program": None if loyalty_disabled(customer) else (frappe.db.get_value("Customer", customer, "loyalty_program") or info.get("loyalty_program")),
 		"wallet_balance": flt(info.get("wallet_balance")),
 		"wallet_used": 0.0,
 		"wallet_added": 0.0,
@@ -513,6 +530,7 @@ def create_manual_wallet_credit(customer, company, amount, remarks=None):
 	Returns:
 		Wallet Transaction document name
 	"""
+	reject_feature(customer, "wallet")
 	frappe.has_permission("Wallet Transaction", "create", throw=True)
 
 	if flt(amount) <= 0:

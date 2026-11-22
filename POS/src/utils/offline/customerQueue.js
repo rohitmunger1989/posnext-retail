@@ -20,6 +20,9 @@ export const saveOfflineCustomer = async (customerData, posProfile) => {
 
     const customer = {
         name: offlineId,
+        custom_pos_disable_loyalty: 0,
+        custom_pos_disable_wallet: 0,
+        custom_pos_disable_credit: 0,
         customer_name: customerName,
         mobile_no: customerData.mobile_no || "",
         email_id: customerData.email_id || "",

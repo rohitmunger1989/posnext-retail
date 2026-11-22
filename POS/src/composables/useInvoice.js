@@ -1,3 +1,4 @@
+import { validateCustomerBenefitPayment } from "@/utils/customerBenefitPolicy";
 import { createResource } from "frappe-ui";
 import { computed, ref, toRaw } from "vue";
 import { isOffline, getCachedItem } from "@/utils/offline";
@@ -1045,6 +1046,7 @@ export function useInvoice() {
 				// Use toRaw() to ensure we get current, non-reactive values (prevents stale cached quantities)
 				const rawItems = toRaw(invoiceItems.value);
 				const rawPayments = toRaw(payments.value);
+				validateCustomerBenefitPayment(customer.value, rawPayments, grandTotal.value, isCreditSale);
 				const rawSalesTeam = toRaw(salesTeam.value);
 				const {
 					invoicePayments,
@@ -1223,6 +1225,9 @@ export function useInvoice() {
 					name: result.customer,
 					customer_name: result.customer_name || result.customer,
 					customer_group: result.customer_group,
+					custom_pos_disable_loyalty: Number(result.custom_pos_disable_loyalty || 0),
+					custom_pos_disable_wallet: Number(result.custom_pos_disable_wallet || 0),
+					custom_pos_disable_credit: Number(result.custom_pos_disable_credit || 0),
 				};
 			}
 		} catch (error) {

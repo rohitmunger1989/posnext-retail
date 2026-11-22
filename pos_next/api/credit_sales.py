@@ -10,6 +10,7 @@ Handles credit sale operations including:
 """
 
 import frappe
+from pos_next.customer_benefit_policy import credit_disabled, reject_feature
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, nowdate, today
 
@@ -160,6 +161,8 @@ def get_available_credit(customer, company, pos_profile=None):
 	Returns:
 		list: Available credit sources with amounts and modified timestamps
 	"""
+	if credit_disabled(customer):
+		return []
 	if not customer:
 		frappe.throw(_("Customer is required"))
 
@@ -449,6 +452,7 @@ def create_payment_hub_credit_plan(
 	transaction that submits the provider-created invoice.  Payment Hub itself is
 	not modified.
 	"""
+	reject_feature(customer, "credit")
 	import json
 
 	cart_reference = str(cart_reference or "").strip()
@@ -782,6 +786,7 @@ def redeem_customer_credit(
 		return []
 
 	invoice_doc = frappe.get_doc("Sales Invoice", invoice_name)
+	reject_feature(invoice_doc.customer, "credit")
 	if invoice_doc.docstatus != 1:
 		frappe.throw(_("Invoice must be submitted to redeem credit"))
 

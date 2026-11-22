@@ -376,6 +376,9 @@ def resolve_exchange_credit_source(return_invoice: str):
     if not ret or ret.docstatus != 1 or not ret.is_return:
         frappe.throw(_("Return invoice {0} is not a submitted Sales Return.").format(return_invoice))
 
+    from pos_next.customer_benefit_policy import reject_feature
+    reject_feature(ret.customer, "credit")
+
     candidates = []
     if ret.return_against:
         original = frappe.db.get_value(
@@ -425,6 +428,13 @@ def resolve_exchange_credit_source(return_invoice: str):
     }
 
 
+def _validate_customer_credit_settlement(customer, refund_type, exchange_mode=False):
+    """Check current Customer policy before preparing any return document."""
+    if refund_type == "credit" or exchange_mode:
+        from pos_next.customer_benefit_policy import reject_feature
+        reject_feature(customer, "credit")
+
+
 @frappe.whitelist()
 @rate_limit(limit=12, seconds=60)
 def create_no_invoice_return(payload=None, manager_pin=None):
@@ -451,6 +461,7 @@ def create_no_invoice_return(payload=None, manager_pin=None):
         frappe.throw(_("Customer is required for a no-invoice return."))
     if not frappe.db.exists("Customer", customer):
         frappe.throw(_("Customer {0} was not found.").format(customer))
+    _validate_customer_credit_settlement(customer, refund_type, exchange_mode)
     if not reason:
         frappe.throw(_("Return reason is required."))
     if refund_type not in {"credit", "cash"}:

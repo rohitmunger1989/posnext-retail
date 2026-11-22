@@ -2080,6 +2080,7 @@
 </template>
 
 <script setup>
+import { customerWalletDisabled, customerCreditDisabled, validateCustomerBenefitPayment } from "@/utils/customerBenefitPolicy";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import {
 	DEFAULT_CURRENCY,
@@ -2392,7 +2393,7 @@ const customerCreditResource = createResource({
 	auto: false,
 	onSuccess(data) {
 		log.debug("[PaymentDialog] Customer credit loaded:", data);
-		customerCredit.value = data || [];
+		customerCredit.value = customerCreditDisabled(props.customer) ? [] : (data || []);
 		// Note: loadingCredit is managed by customerBalanceResource since it provides the net_balance for UI
 		log.debug("[PaymentDialog] Total available credit:", totalAvailableCredit.value);
 	},
@@ -2452,7 +2453,7 @@ const walletInfoResource = createResource({
 	auto: false,
 	onSuccess(data) {
 		log.debug("[PaymentDialog] Wallet info loaded:", data);
-		walletInfo.value = data || {
+		walletInfo.value = (!customerWalletDisabled(props.customer) && data) || {
 			wallet_enabled: false,
 			wallet_exists: false,
 			wallet_balance: 0,
@@ -2534,7 +2535,7 @@ const filteredPaymentMethods = computed(() => {
 	return paymentMethods.value.filter((method) => {
 		// If it's a wallet payment method, only show when loyalty/wallet is enabled
 		if (isWalletPaymentMethod(method.mode_of_payment)) {
-			return walletInfo.value.wallet_enabled;
+			return !customerWalletDisabled(props.customer) && walletInfo.value.wallet_enabled;
 		}
 		return true;
 	});
@@ -3479,6 +3480,7 @@ function switchToNextPaymentMethod(partialAmount) {
 // Consolidate payment entries: if a row with the same mode already exists,
 // add to it instead of creating a duplicate row.
 function _upsertPaymentEntry(method, amt) {
+	if (customerWalletDisabled(props.customer) && (method.is_wallet_payment || isWalletPaymentMethod(method.mode_of_payment))) { showWarning(__("This customer cannot use a wallet.")); return; }
 	const existing = paymentEntries.value.find(
 		(e) => e.mode_of_payment === method.mode_of_payment && !e.is_customer_credit
 	);
@@ -3677,6 +3679,7 @@ async function addCustomPayment(method, amount) {
 // can supply one explicit server-resolved credit source, including the original
 // invoice that actually carries a linked return's negative outstanding balance.
 async function applyCustomerCredit(preferredOrigin = null, explicitCredits = null, refreshFirst = true) {
+	if (customerCreditDisabled(props.customer)) { showWarning(__("Customer credit is disabled for this customer.")); return; }
 	if (!preferredOrigin && refreshFirst && !props.isOffline) {
 		try {
 			await Promise.all([customerBalanceResource.fetch(), customerCreditResource.fetch()]);
@@ -3740,6 +3743,7 @@ async function applyCustomerCredit(preferredOrigin = null, explicitCredits = nul
 
 // Add "Pay on Account" - Credit Sale (invoice with outstanding amount)
 function addCreditAccountPayment() {
+	if (customerCreditDisabled(props.customer)) { showWarning(__("Customer credit is disabled for this customer.")); return; }
 	log.debug("[PaymentDialog] Add credit account payment (Pay Later):", {
 		grandTotal: props.grandTotal,
 		currentPaid: totalPaid.value,
@@ -3769,6 +3773,8 @@ function clearAll() {
 }
 
 function completePayment() {
+	try { validateCustomerBenefitPayment(props.customer, paymentEntries.value, props.grandTotal); }
+	catch (error) { showWarning(__(error.message)); return; }
 	log.debug("[PaymentDialog] Complete payment called:", {
 		canComplete: canComplete.value,
 		totalPaid: totalPaid.value,

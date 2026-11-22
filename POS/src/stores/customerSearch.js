@@ -26,7 +26,7 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 	const resultCache = ref(new Map());
 
 	// Sync state
-	const CUSTOMERS_SYNC_KEY = "pos_customers_last_sync";
+	const CUSTOMERS_SYNC_KEY = "pos_customers_last_sync_benefits_v2";
 	let serverDataFresh = false;
 
 	// Ultra-fast search helper - optimized for speed
@@ -330,7 +330,7 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 	// Real-time Push Integration
 	const { onCustomerUpdate } = useRealtimeCustomers();
 	onCustomerUpdate(async (data) => {
-		const { name, action, customer_name, mobile_no, email_id, disabled } = data;
+		const { name, action, customer_name, mobile_no, email_id, disabled, custom_pos_disable_loyalty, custom_pos_disable_wallet, custom_pos_disable_credit } = data;
 		console.log("Customer update via real-time:", data);
 		if (action === "delete" || disabled) {
 			// Remove from memory
@@ -352,6 +352,9 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 				mobile_no,
 				email_id,
 				disabled: !!disabled,
+				custom_pos_disable_loyalty: Number(custom_pos_disable_loyalty || 0),
+				custom_pos_disable_wallet: Number(custom_pos_disable_wallet || 0),
+				custom_pos_disable_credit: Number(custom_pos_disable_credit || 0),
 			};
 			await addCustomerToCache(customer);
 		}

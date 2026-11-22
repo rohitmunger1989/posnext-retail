@@ -95,6 +95,12 @@ class CustomSalesInvoice(SalesInvoice):
 	for wallet payment methods marked with is_wallet_payment.
 	"""
 
+	def validate(self):
+		from pos_next.customer_benefit_policy import clear_invoice_loyalty
+		clear_invoice_loyalty(self)
+		super().validate()
+		clear_invoice_loyalty(self)
+
 	def make_pos_gl_entries(self, gl_entries):
 		"""
 		Override to add party information for wallet payment accounts.

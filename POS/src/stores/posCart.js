@@ -1,3 +1,4 @@
+import { resolveCustomerBenefitPolicy } from "@/utils/customerBenefitPolicy";
 import { useInvoice } from "@/composables/useInvoice";
 import { usePOSOffersStore } from "@/stores/posOffers";
 import { usePOSSettingsStore } from "@/stores/posSettings";
@@ -357,8 +358,13 @@ export const usePOSCartStore = defineStore("posCart", () => {
 		return offersStore.loadOneTimeContextForCustomer(customerName, { isWalkIn });
 	}
 
+	let customerSelectionGeneration = 0;
 	async function setCustomer(selectedCustomer) {
+		const generation = ++customerSelectionGeneration;
 		customer.value = selectedCustomer;
+		const resolved = await resolveCustomerBenefitPolicy(selectedCustomer);
+		if (generation !== customerSelectionGeneration) return;
+		customer.value = resolved;
 		await syncOneTimeContextForCurrentCustomer();
 	}
 

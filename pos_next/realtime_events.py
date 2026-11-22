@@ -201,6 +201,9 @@ def emit_customer_event(doc, method=None):
 			"mobile_no": doc.mobile_no or "",
 			"email_id": doc.email_id or "",
 			"disabled": doc.disabled,
+			"custom_pos_disable_loyalty": int(doc.get("custom_pos_disable_loyalty") or 0),
+			"custom_pos_disable_wallet": int(doc.get("custom_pos_disable_wallet") or 0),
+			"custom_pos_disable_credit": int(doc.get("custom_pos_disable_credit") or 0),
 			"action": action,
 			"timestamp": frappe.utils.now(),
 		}
