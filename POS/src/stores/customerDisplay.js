@@ -1,3 +1,4 @@
+import {priceCheckSnapshot} from "@/utils/priceCheckDisplay";
 import { buildOperationDisplay, trackOperationFocus } from "@/utils/operationDisplay";
 import { customerWalletDisabled, customerCreditDisabled, customerLoyaltyDisabled } from "@/utils/customerBenefitPolicy";
 import { defineStore } from "pinia";
@@ -99,6 +100,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	const customerFinancialKey = ref("");
 	const transactionMode = ref("SALE");
 	const operationPreview = ref(null);
+	const priceCheckPreview = ref(null);
 	let operationChangeSequence = 0;
 	const initialized = ref(false);
 	const terminalId = ref("");
@@ -455,7 +457,11 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 
 	function syncCartNow() {
 		if (!initialized.value || !isEnabled.value) return;
-		if (operationPreview.value) {
+		if (priceCheckPreview.value) {
+            publish({...basePayload("PRICE_CHECK"), price_check:priceCheckPreview.value.data});
+            return;
+        }
+        if (operationPreview.value) {
 			publish(buildOperationDisplay(basePayload(operationPreview.value.mode), operationPreview.value, serializeItem));
 			return;
 		}
@@ -574,6 +580,20 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		publish(payload);
 	}
 
+	function setPriceCheckPreview(owner, snapshot) {
+        if (!initialized.value || !isEnabled.value) return;
+        clearTimeout(thankYouTimer);
+        thankYouTimer = null;
+        completedHoldUntil = 0;
+        priceCheckPreview.value = {owner, data:priceCheckSnapshot(snapshot)};
+        syncCartNow();
+    }
+    function clearPriceCheckPreview(owner) {
+        if (priceCheckPreview.value?.owner !== owner) return;
+        priceCheckPreview.value = null;
+        syncCartNow();
+    }
+
 	function setOperationPreview(owner, snapshot) {
 		if (!isEnabled.value || !initialized.value) return;
 		clearTimeout(thankYouTimer);
@@ -596,12 +616,14 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function setTransactionMode(mode = "SALE") {
+		priceCheckPreview.value = null;
 		operationPreview.value = null;
 		transactionMode.value = String(mode || "SALE").toUpperCase();
 		if (isEnabled.value) publish(buildCartPayload(transactionMode.value === "SALE" ? undefined : transactionMode.value));
 	}
 
 	function showCompleted({ invoice = null, payment = null, mode = null, extra = null } = {}) {
+		priceCheckPreview.value = null;
 		operationPreview.value = null;
 		customerSearchPreview.value = "";
 		if (!isEnabled.value) return;
@@ -660,6 +682,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function clearToIdle() {
+		priceCheckPreview.value = null;
 		operationPreview.value = null;
 		customerSearchPreview.value = "";
 		clearTimeout(thankYouTimer);
@@ -741,6 +764,7 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 	}
 
 	function stop() {
+		priceCheckPreview.value = null;
 		operationPreview.value = null;
 		customerSearchPreview.value = "";
 		clearTimeout(syncTimer);
@@ -816,6 +840,8 @@ export const useCustomerDisplayStore = defineStore("customerDisplay", () => {
 		initialize,
 		stop,
 		setPayment,
+		setPriceCheckPreview,
+		clearPriceCheckPreview,
 		setOperationPreview,
 		clearOperationPreview,
 		setTransactionMode,

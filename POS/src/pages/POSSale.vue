@@ -41,6 +41,7 @@
 				@logout="uiStore.showLogoutDialog = true"
 			>
 				<template #menu-items>
+                    <button v-if="shiftStore.hasOpenShift" type="button" class="pos-menu-price w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-3 transition-colors" @click="showPriceChecker = true"><svg class="pos-menu-icon-price w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h7l11 11-7 7L3 10V3zm4 4h.01M11 10l5 5m-5 0l5-5" /></svg><span>{{ __('Price Checker') }}</span></button>
 					<button
 						v-if="shiftStore.hasOpenShift"
 						@click="uiStore.showOpenShiftDialog = true"
@@ -109,10 +110,10 @@
 					</button>
 					<button
 						@click="navigateToShiftHistory"
-						class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-3 transition-colors"
+						class="pos-menu-history w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-3 transition-colors"
 					>
 						<svg
-							class="w-5 h-5 text-indigo-600"
+							class="pos-menu-icon-history w-5 h-5 text-indigo-600"
 							fill="none"
 							stroke="currentColor"
 							viewBox="0 0 24 24"
@@ -214,7 +215,7 @@
 						</svg>
 						<span>{{ __("Lock Screen") }}</span>
 					</button>
-                                        <button type="button" class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 flex items-center gap-3 transition-colors" @click="showFloatDialog = true"><svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18v12H3zM3 10h18m-9 2v4m-2-2h4" /></svg><span>{{ __("Add Float") }}</span></button>
+                                        <button type="button" class="pos-menu-float w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 flex items-center gap-3 transition-colors" @click="showFloatDialog = true"><svg class="pos-menu-icon-float w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18v12H3zM3 10h18m-9 2v4m-2-2h4" /></svg><span>{{ __("Add Float") }}</span></button>
 <button
                                                 v-if="
                                                         shiftStore.hasOpenShift &&
@@ -223,9 +224,9 @@
                                                         Number(posSettingsStore.settings?.allow_manual_cash_drawer ?? 1) === 1
                                                 "
                                                 @click="$refs.invoiceCart?.openCashDrawerDialog()"
-                                                class="w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
+                                                class="pos-menu-drawer w-full text-start px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
                                         >
-                                                <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <svg class="pos-menu-icon-drawer w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2zm0 4h16M8 15h2" />
                                                 </svg>
                                                 <span>{{ __("Open Drawer") }}</span>
@@ -450,6 +451,7 @@
 								@view-shift="uiStore.showOpenShiftDialog = true"
 								@show-drafts="uiStore.showDraftDialog = true"
 								@show-history="uiStore.showHistoryDialog = true"
+                                @show-price-checker="showPriceChecker = true"
 								@show-return="openReturnDialog"
 								@close-shift="handleCloseShift()"
 								@show-shift-history="navigateToShiftHistory"
@@ -1074,6 +1076,7 @@
 		<!-- Session Lock Screen (outside v-if/v-else so it renders even during loading) -->
 		<SessionLockScreen />
 	</div>
+<PriceCheckerDialog v-model="showPriceChecker" :pos-profile="shiftStore.profileName" />
 <FloatAdditionDialog v-model="showFloatDialog" :shift="shiftStore.currentShift?.name" :profile="shiftStore.profileName" :open-drawer="openFloatDrawer" />
 </template>
 
@@ -1114,6 +1117,8 @@ import CreateCustomerDialog from "@/components/sale/CreateCustomerDialog.vue";
 import CustomerDialog from "@/components/sale/CustomerDialog.vue";
 import DraftInvoicesDialog from "@/components/sale/DraftInvoicesDialog.vue";
 import InvoiceCart from "@/components/sale/InvoiceCart.vue";
+import PriceCheckerDialog from "@/components/sale/PriceCheckerDialog.vue";
+import {useDialog} from "@/composables/useDialogState";
 import InvoiceHistoryDialog from "@/components/sale/InvoiceHistoryDialog.vue";
 import ShiftHistoryDialog from "@/components/sale/ShiftHistoryDialog.vue";
 import ItemSelectionDialog from "@/components/sale/ItemSelectionDialog.vue";
@@ -4657,6 +4662,8 @@ watch(
 );
 
 const showFloatDialog = ref(false);
+const {isOpen:showPriceChecker,cleanup:cleanupPriceChecker} = useDialog("priceChecker");
+onUnmounted(cleanupPriceChecker);
 let floatSyncTimer;
 const syncPendingFloat = async () => {
     if (offlineState.isOffline) return;
@@ -4674,3 +4681,13 @@ async function openFloatDrawer(name, offline = false) {
     return invoiceCart.value.openFloatDrawer(name, offline);
 }
 </script>
+<style scoped>
+.pos-menu-icon-price{color:#7c3aed;stroke:currentColor}
+.pos-menu-icon-history{color:#6366f1;stroke:currentColor}
+.pos-menu-icon-float{color:#0891b2;stroke:currentColor}
+.pos-menu-icon-drawer{color:#059669;stroke:currentColor}
+.pos-menu-price:hover{background:#f5f3ff}
+.pos-menu-history:hover{background:#eef2ff}
+.pos-menu-float:hover{background:#ecfeff}
+.pos-menu-drawer:hover{background:#ecfdf5}
+</style>

@@ -9,6 +9,8 @@ from frappe.utils import cint, flt
 class POSSettings(Document):
 	def validate(self):
 		"""Validate POS Settings"""
+		from pos_next.api.price_checker import validate_settings
+		validate_settings(self)
 		from pos_next.customer_display_media import validate_playlist
 		validate_playlist(self)
 		# A hidden stale Loyalty Program link must not survive after loyalty is

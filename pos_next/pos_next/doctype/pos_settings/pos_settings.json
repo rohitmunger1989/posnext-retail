@@ -60,6 +60,8 @@
   "allow_duplicate_customer_names",
   "allow_duplicate_customer_mobile",
   "fetch_coupon",
+  "section_break_price_checker",
+  "comparison_price_list",
   "section_break_printing",
   "allow_print_last_invoice",
   "silent_print",
@@ -1170,6 +1172,18 @@
    "label": "Allow Multiple Customers with Same Mobile Number",
    "default": "0",
    "description": "Unchecked: POSNext blocks a mobile number already assigned to any customer. Checked: allow multiple customers to share it. Existing duplicates are not changed."
+  },
+  {
+   "fieldname": "comparison_price_list",
+   "fieldtype": "Link",
+   "label": "Comparison Price List",
+   "options": "Price List",
+   "description": "Optional reference list for the read-only Price Checker. Selling prices still come from the POS Profile Price List. Choose an enabled selling price list."
+  },
+  {
+   "fieldname": "section_break_price_checker",
+   "fieldtype": "Section Break",
+   "label": "Price Checker"
   }
  ],
  "index_web_pages_for_search": 1,

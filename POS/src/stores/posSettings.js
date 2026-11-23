@@ -105,6 +105,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allow_customer_purchase_order: 0,
 		allow_duplicate_customer_names: 0,
 		allow_duplicate_customer_mobile: 0,
+		comparison_price_list: "",
 		fetch_coupon: 0,
 		// Printing
 		allow_print_last_invoice: 0,
@@ -434,6 +435,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 			allow_customer_purchase_order: 0,
 			allow_duplicate_customer_names: 0,
 		allow_duplicate_customer_mobile: 0,
+		comparison_price_list: "",
 			fetch_coupon: 0,
 			allow_print_last_invoice: 0,
 			silent_print: 0,

@@ -3,6 +3,7 @@
 
 frappe.ui.form.on("POS Settings", {
 	refresh(frm) {
+        frm.set_query("comparison_price_list", () => ({filters:{enabled:1,selling:1}}));
         if (!frm.is_new() && frm.doc.customer_display_enabled && frm.perm?.[0]?.write) {
             frm.add_custom_button(__("Add Advertising Videos"), () => {
                 new frappe.ui.FileUploader({

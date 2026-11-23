@@ -1,4 +1,5 @@
 import { ref, watch, nextTick, onMounted, onUnmounted } from "vue";
+import {useDialogState} from "@/composables/useDialogState";
 import { QueuedMutex } from "@/utils/mutex";
 import { usePOSSettingsStore } from "@/stores/posSettings";
 import { playScanError, playScanSuccess } from "@/utils/scannerSound";
@@ -27,6 +28,12 @@ import { playScanError, playScanSuccess } from "@/utils/scannerSound";
  */
 export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialogOpen }) {
         const posSettingsStore = usePOSSettingsStore();
+        const {activeDialogIds} = useDialogState();
+        const priceCheckerOpen = () => activeDialogIds.value.includes("priceChecker");
+        let barcodeScanGeneration = 0;
+        watch(priceCheckerOpen, open => {
+            if(open){barcodeScanGeneration++;clearAutoSearchTimer();}
+        }, {flush:"sync"});
 
 	// --- Reactive state (exposed) ---
 	const searchInputRef = ref(null);
@@ -145,6 +152,7 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 
 	function focusSearchInput() {
 		nextTick(() => {
+            if (priceCheckerOpen()) return;
 			if (searchInputRef.value) {
 				searchInputRef.value.focus();
 			}
@@ -168,6 +176,7 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 	// ---- Event handlers ----
 
 	function handleKeyDown(event) {
+        if (priceCheckerOpen()) return;
 		if (event.key === "Enter") {
 			event.preventDefault();
 			clearAutoSearchTimer();
@@ -198,6 +207,7 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 	 *      separate from display.
 	 */
 	function handleSearchInput(event) {
+        if (priceCheckerOpen()) return;
 		const value = event.target.value;
 
 		// Guard: ignore stale empty events after search was already cleared
@@ -225,6 +235,7 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 
 	/** Clicking the search input clears search + timer atomically. */
 	function handleSearchClick() {
+        if (priceCheckerOpen()) return;
 		clearSearchAndResetInput();
 	}
 
@@ -243,11 +254,15 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 	 * @param {boolean} forceAutoAdd - When true, item is added without user click
 	 */
 	function processBarcodeScan(barcode, forceAutoAdd) {
+        if (priceCheckerOpen()) return;
+        const scanGeneration = barcodeScanGeneration;
 		const shouldAutoAdd = forceAutoAdd || (scannerEnabled.value && autoAddEnabled.value);
 
 		barcodeQueue.withLock(async () => {
+            if (priceCheckerOpen() || scanGeneration !== barcodeScanGeneration) return;
 			try {
 				const item = await itemStore.searchByBarcode(barcode);
+                if (priceCheckerOpen() || scanGeneration !== barcodeScanGeneration) return;
 				if (item) {
 					const accepted = onItemFound(item, shouldAutoAdd);
 
@@ -265,6 +280,8 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 			} catch (error) {
 				console.error("Barcode API error:", error);
 			}
+
+			if (priceCheckerOpen() || scanGeneration !== barcodeScanGeneration) return;
 
 			// Barcode not found — show clear "not found" message.
 			// Note: we cannot fall back to filteredItems here because

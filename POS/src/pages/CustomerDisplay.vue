@@ -1,5 +1,5 @@
 <template>
-	<div :class="['customer-display', `theme-${theme.toLowerCase()}`, { 'is-compact': compactDisplay }]">
+	<div :class="['customer-display', `theme-${theme.toLowerCase()}`, { 'is-compact': compactDisplay, 'price-checker-active': mode === 'PRICE_CHECK' }]">
 		<div v-if="!profile" class="empty-state">
 			<h1>Customer Display</h1>
 			<p>Missing POS Profile.</p>
@@ -48,7 +48,8 @@
 				<span class="customer-phone-preview-status">Awaiting customer selection</span>
 			</div>
 			<main class="display-main">
-				<section v-if="mode === 'IDLE'" class="idle-screen">
+				<section v-if="mode === 'PRICE_CHECK'" class="price-check-screen" role="status" aria-label="Price Checker"><PriceComparisonCard :data="displayState?.price_check" :theme="theme" /></section>
+                <section v-else-if="mode === 'IDLE'" class="idle-screen">
                     <AdvertisingVideoPlayer v-if="idleMode === 'Video'" :videos="displayState?.idle?.videos || []" :legacy-video="displayState?.idle?.video || ''">
                         <div class="welcome-panel"><h1 v-if="visible('company_name')">{{ displayState?.company?.name }}</h1><p v-if="visible('welcome_text')">{{ displayState?.company?.welcome_text }}</p></div>
                     </AdvertisingVideoPlayer>
@@ -212,6 +213,7 @@
 </template>
 
 <script setup>
+import PriceComparisonCard from "@/components/priceChecker/PriceComparisonCard.vue";
 import AdvertisingVideoPlayer from "@/components/customerDisplay/AdvertisingVideoPlayer.vue";
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
@@ -774,6 +776,8 @@ onUnmounted(() => {
 </style>
 
 <style scoped>
+.customer-display.price-checker-active{height:100vh;height:100dvh;min-height:0;overflow:hidden}.price-checker-active .display-header{flex-shrink:0}.price-checker-active .display-main{min-height:0;overflow:hidden;flex:1}
+.price-check-screen{display:flex;align-items:flex-start;justify-content:center;height:100%;min-height:0;width:100%;padding:clamp(8px,1.5vw,24px);box-sizing:border-box;overflow:auto;overscroll-behavior:contain;background:radial-gradient(ellipse at top,#4338ca22,transparent 70%)}
 .operation-preview { justify-content:flex-start; gap:10px; padding:20px; overflow:hidden; }
 .operation-preview h1 { font-size:clamp(28px,4vw,54px); margin:0; flex-shrink:0; }
 .operation-preview .operation-stage,.operation-preview .operation-customer,.operation-preview .operation-reference { font-size:clamp(14px,1.5vw,22px); margin:0; flex-shrink:0; }

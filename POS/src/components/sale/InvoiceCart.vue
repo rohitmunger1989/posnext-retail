@@ -914,11 +914,11 @@
 					<button
 						type="button"
 						@click="$emit('show-shift-history')"
-						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="qa-action qa-history flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('View shift history')"
 					>
 						<div
-							class="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-indigo-100 transition-colors"
+							class="qa-icon w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-indigo-100 transition-colors"
 						>
 							<svg
 								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-indigo-600"
@@ -945,11 +945,11 @@
 						v-if="cashDrawerEnabled && allowManualCashDrawer"
 						type="button"
 						@click="openCashDrawerDialog"
-						class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
+						class="qa-action qa-drawer flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 transition-colors shadow-sm hover:shadow touch-manipulation group"
 						:title="__('Open cash drawer')"
 					>
 						<div
-							class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-emerald-100 transition-colors"
+							class="qa-icon w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-emerald-100 transition-colors"
 						>
 							<svg
 								class="w-4 h-4 sm:w-[18px] sm:h-[18px] text-emerald-600"
@@ -969,9 +969,13 @@
 							__("Open Drawer")
 						}}</span>
 					</button>
-<button type="button" class="flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 transition-colors shadow-sm hover:shadow touch-manipulation group" @click="showFloatDialog = true" :title="__('Add cash to this shift')">
-  <div class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-emerald-100 transition-colors"><svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18v12H3zM3 10h18m-9 2v4m-2-2h4" /></svg></div>
+<button type="button" class="qa-action qa-float flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-emerald-300 hover:bg-emerald-50 active:bg-emerald-100 transition-colors shadow-sm hover:shadow touch-manipulation group" @click="showFloatDialog = true" :title="__('Add cash to this shift')">
+  <div class="qa-icon w-8 h-8 sm:w-9 sm:h-9 bg-emerald-50 rounded-full flex items-center justify-center mb-1.5 group-hover:bg-emerald-100 transition-colors"><svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18v12H3zM3 10h18m-9 2v4m-2-2h4" /></svg></div>
   <span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{ __("Add Float") }}</span>
+</button>
+<button type="button" class="qa-action qa-price flex flex-col items-center justify-center p-2 sm:p-2.5 bg-white border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 active:bg-indigo-100 transition-colors shadow-sm hover:shadow touch-manipulation group" @click="emit('show-price-checker')" :title="__('Check prices without adding to cart')">
+  <div class="qa-icon w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-full flex items-center justify-center mb-1.5"><svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h7l11 11-7 7L3 10V3zm4 4h.01M11 10l5 5m-5 0l5-5" /></svg></div>
+  <span class="text-[10px] sm:text-[11px] font-semibold text-gray-700">{{ __('Price Checker') }}</span>
 </button>
 				</div>
 
@@ -1925,6 +1929,7 @@ const props = defineProps({
  * Events emitted to parent component for cart operations
  */
 const emit = defineEmits([
+	"show-price-checker",
 	"update-quantity", // (itemCode, newQty, uom?) - Update item quantity
 	"remove-item", // (itemCode, uom?) - Remove item from cart
 	"select-customer", // (customer) - Select/change customer
@@ -3475,4 +3480,16 @@ onBeforeUnmount(() => {
 
 const showFloatDialog = ref(false);
 </script>
+<style scoped>
+.qa-history{--qa-color:#6366f1;--qa-soft:#eef2ff;--qa-hover:#e0e7ff;--qa-border:#a5b4fc}
+.qa-drawer{--qa-color:#059669;--qa-soft:#ecfdf5;--qa-hover:#d1fae5;--qa-border:#6ee7b7}
+.qa-float{--qa-color:#0891b2;--qa-soft:#ecfeff;--qa-hover:#cffafe;--qa-border:#67e8f9}
+.qa-price{--qa-color:#7c3aed;--qa-soft:#f5f3ff;--qa-hover:#ede9fe;--qa-border:#c4b5fd}
+.qa-action .qa-icon{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;margin-bottom:6px;border-radius:9999px;color:var(--qa-color);background:var(--qa-soft);transition:background-color .15s ease}
+.qa-action .qa-icon>svg{width:18px;height:18px;color:inherit;stroke:currentColor}
+.qa-action:hover{border-color:var(--qa-border)}
+.qa-action:hover .qa-icon{background:var(--qa-hover)}
+.qa-action:focus-visible{outline:2px solid var(--qa-color);outline-offset:2px}
+</style>
+
 ```

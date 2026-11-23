@@ -48,6 +48,8 @@ declare module 'vue' {
     POSFooter: typeof import('./src/components/common/POSFooter.vue')['default']
     POSHeader: typeof import('./src/components/pos/POSHeader.vue')['default']
     POSSettings: typeof import('./src/components/settings/POSSettings.vue')['default']
+    PriceCheckerDialog: typeof import('./src/components/sale/PriceCheckerDialog.vue')['default']
+    PriceComparisonCard: typeof import('./src/components/priceChecker/PriceComparisonCard.vue')['default']
     ProductManagement: typeof import('./src/components/sale/ProductManagement.vue')['default']
     PromotionManagement: typeof import('./src/components/sale/PromotionManagement.vue')['default']
     RetailItemPicker: typeof import('./src/components/sale/RetailItemPicker.vue')['default']
