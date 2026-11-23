@@ -2,6 +2,7 @@ import { requireOnlineSession } from "./requireOnlineSession";
 import { db } from "./db";
 import { call } from "@/utils/apiWrapper";
 import { generateUUID } from "./uuid";
+import { normalizeCustomerMobile } from "../customerMobile";
 
 /**
  * Save a newly created customer for later server synchronization.
@@ -9,7 +10,7 @@ import { generateUUID } from "./uuid";
  * The customer cache and pending queue are updated atomically.
  * Temporary names are never treated as ERPNext Customer IDs.
  */
-export const saveOfflineCustomer = async (customerData, posProfile) => {
+export const saveOfflineCustomer = async (customerData, posProfile, options = {}) => {
     const customerName = String(customerData.customer_name || "").trim();
 
     if (!customerName) {
@@ -36,6 +37,14 @@ export const saveOfflineCustomer = async (customerData, posProfile) => {
     };
 
     await db.transaction("rw", db.customer_queue, db.customers, async () => {
+        const mobileKey = normalizeCustomerMobile(customer.mobile_no);
+        if (mobileKey && options.allowDuplicates !== true) {
+            await db.customers.each(existing => {
+                if (normalizeCustomerMobile(existing.mobile_no) === mobileKey) {
+                    throw new Error("A customer with this mobile number already exists. Select the existing customer instead.");
+                }
+            });
+        }
         await db.customer_queue.add({
             offline_id: offlineId,
             status: "pending",

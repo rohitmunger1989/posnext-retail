@@ -284,11 +284,13 @@ import { call } from "@/utils/apiWrapper";
 
 import { usePOSPermissions } from "@/composables/usePermissions";
 import { useToast } from "@/composables/useToast";
+import { usePOSSettingsStore } from "@/stores/posSettings";
 import { useCountriesStore } from "@/stores/countries";
 import { db } from "@/utils/offline/db";
 import { offlineState } from "@/utils/offline/offlineState";
 import { saveOfflineCustomer } from "@/utils/offline/customerQueue";
 import { logger } from "@/utils/logger";
+import { parseError } from "@/utils/errorHandler";
 import { Button, Dialog, Input, createResource } from "frappe-ui";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
@@ -299,6 +301,7 @@ const log = logger.create("CreateCustomerDialog");
 // =============================================================================
 
 const countriesStore = useCountriesStore();
+const posSettingsStore = usePOSSettingsStore();
 const { canCreateCustomer } = usePOSPermissions();
 const { showSuccess, showError } = useToast();
 
@@ -465,24 +468,22 @@ const createCustomerResource = createResource({
 	},
 	onError: (error) => {
 		log.error("Error creating customer", error);
-		showError(error.message || __("Failed to create customer"));
+		showError(parseError(error).message || __("Failed to create customer"));
 	},
 });
 
 const updateCustomerResource = createResource({
-	url: "frappe.client.set_value",
+	url: "pos_next.api.customer_update.update_customer",
 	makeParams: () => ({
-		doctype: "Customer",
-		name: props.customer?.name,
-		fieldname: {
-			customer_name: customerData.value.customer_name,
-			customer_group: customerData.value.customer_group || "",
-			territory: customerData.value.territory || "",
-			mobile_no: customerData.value.mobile_no || "",
-			email_id: customerData.value.email_id || "",
-			custom_governorate: customerData.value.custom_governorate || "",
-			custom_district: customerData.value.custom_district || "",
-		},
+		customer: props.customer?.name,
+		pos_profile: props.posProfile,
+		customer_name: customerData.value.customer_name,
+		customer_group: customerData.value.customer_group || "",
+		territory: customerData.value.territory || "",
+		mobile_no: customerData.value.mobile_no || "",
+		email_id: customerData.value.email_id || "",
+		custom_governorate: customerData.value.custom_governorate || "",
+		custom_district: customerData.value.custom_district || "",
 	}),
 	onSuccess: (data) => {
 		showSuccess(__("Customer {0} updated successfully", [data.customer_name]));
@@ -491,7 +492,7 @@ const updateCustomerResource = createResource({
 	},
 	onError: (error) => {
 		log.error("Error updating customer", error);
-		showError(error.message || __("Failed to update customer"));
+		showError(parseError(error).message || __("Failed to update customer"));
 	},
 });
 
@@ -953,6 +954,7 @@ const handleCreate = async () => {
             return showError(__("Editing customers requires an internet connection"));
         }
 
+        updateMobileNumber();
         await updateCustomerResource.submit();
         return;
     }
@@ -964,7 +966,8 @@ const handleCreate = async () => {
 
             const customer = await saveOfflineCustomer(
                 { ...customerData.value },
-                props.posProfile
+                props.posProfile,
+                { allowDuplicates: [true, 1, "1"].includes(posSettingsStore.settings.allow_duplicate_customer_mobile) }
             );
 
             emit("customer-created", customer);

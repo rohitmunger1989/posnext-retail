@@ -110,6 +110,9 @@ def create_customer(
 	if not customer_name:
 		frappe.throw(_("Customer name is required"))
 
+	from pos_next.customer_mobile_policy import require_unique_mobile
+	mobile_key = require_unique_mobile(mobile_no, pos_profile=pos_profile)
+
 	loyalty_program = get_default_loyalty_program_from_settings(
 		company=company,
 		pos_profile=pos_profile,
@@ -137,6 +140,7 @@ def create_customer(
 			"doctype": "Customer",
 			"customer_name": customer_name,
 			"customer_type": "Individual",
+			"custom_pos_mobile_key": mobile_key,
 			"customer_group": resolved_customer_group,
 			"territory": resolved_territory,
 			"mobile_no": mobile_no or "",

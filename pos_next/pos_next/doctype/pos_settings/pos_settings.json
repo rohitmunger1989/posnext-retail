@@ -58,6 +58,7 @@
   "section_break_customer",
   "allow_customer_purchase_order",
   "allow_duplicate_customer_names",
+  "allow_duplicate_customer_mobile",
   "fetch_coupon",
   "section_break_printing",
   "allow_print_last_invoice",
@@ -1162,6 +1163,13 @@
    "options": "Slow\nNormal\nFast",
    "default": "Normal",
    "depends_on": "eval:doc.customer_display_overlay_enabled && doc.customer_display_overlay_type == 'Scrolling'"
+  },
+  {
+   "fieldname": "allow_duplicate_customer_mobile",
+   "fieldtype": "Check",
+   "label": "Allow Multiple Customers with Same Mobile Number",
+   "default": "0",
+   "description": "Unchecked: POSNext blocks a mobile number already assigned to any customer. Checked: allow multiple customers to share it. Existing duplicates are not changed."
   }
  ],
  "index_web_pages_for_search": 1,

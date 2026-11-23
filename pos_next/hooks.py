@@ -101,8 +101,8 @@ fixtures = [
 # ------------
 
 # before_install = "pos_next.install.before_install"
-after_install = ["pos_next.install.after_install", "pos_next.setup_float_history.ensure_float_history_workspace", "pos_next.customer_benefit_policy.setup", "pos_next.customer_display_media.ensure_upload_limit"]
-after_migrate = ["pos_next.install.after_migrate", "pos_next.setup_float_history.ensure_float_history_workspace", "pos_next.customer_benefit_policy.setup", "pos_next.customer_display_media.ensure_upload_limit"]
+after_install = ["pos_next.install.after_install", "pos_next.setup_float_history.ensure_float_history_workspace", "pos_next.customer_benefit_policy.setup", "pos_next.customer_display_media.ensure_upload_limit", "pos_next.customer_mobile_policy.setup"]
+after_migrate = ["pos_next.install.after_migrate", "pos_next.setup_float_history.ensure_float_history_workspace", "pos_next.customer_benefit_policy.setup", "pos_next.customer_display_media.ensure_upload_limit", "pos_next.customer_mobile_policy.setup"]
 
 # Uninstallation
 # ------------
